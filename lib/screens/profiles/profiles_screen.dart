@@ -47,7 +47,12 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: () async => setState(() => _future = _service.list()),
+        onRefresh: () async {
+          final future = _service.list();
+          setState(() {
+            _future = future;
+          });
+        },
         child: FutureBuilder<Map<String, Profile>>(
           future: _future,
           builder: (context, snap) {

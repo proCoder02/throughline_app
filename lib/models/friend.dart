@@ -18,6 +18,6 @@ class MoodEntry {
   factory MoodEntry.fromJson(Map<String, dynamic> json) => MoodEntry(
         moodLabel: json['mood_label'],
         moodScore: (json['mood_score'] as num).toDouble(),
-        createdAt: DateTime.parse(json['created_at']),
+        createdAt: DateTime.parse(json['created_at']).toLocal(),
       );
 }

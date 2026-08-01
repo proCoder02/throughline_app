@@ -33,11 +33,11 @@ class Task {
         description: json['description'],
         owner: json['owner'],
         dueDate: json['due_date'],
-        reminderAt: json['reminder_at'] != null ? DateTime.parse(json['reminder_at']) : null,
+        reminderAt: json['reminder_at'] != null ? DateTime.parse(json['reminder_at']).toLocal() : null,
         reminderSent: json['reminder_sent'] ?? false,
         emailSent: json['email_sent'] ?? false,
         status: json['status'],
-        createdAt: DateTime.parse(json['created_at']),
+        createdAt: DateTime.parse(json['created_at']).toLocal(),
         category: json['category'] ?? 'personal',
       );
 }

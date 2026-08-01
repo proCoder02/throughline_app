@@ -3,13 +3,17 @@ import 'package:provider/provider.dart';
 
 import 'services/api_client.dart';
 import 'state/auth_provider.dart';
+import 'state/call_provider.dart';
+import 'state/listen_provider.dart';
 import 'state/notify_provider.dart';
 import 'theme.dart';
 import 'screens/auth_screen.dart';
-import 'screens/home_shell.dart';
+import 'screens/persona_gate.dart';
 
 final authProvider = AuthProvider();
 final notifyProvider = NotifyProvider();
+final callProvider = CallProvider();
+final listenProvider = ListenProvider();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +28,8 @@ void main() {
       providers: [
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider.value(value: notifyProvider),
+        ChangeNotifierProvider.value(value: callProvider),
+        ChangeNotifierProvider.value(value: listenProvider),
       ],
       child: const ThroughlineApp(),
     ),
@@ -46,7 +52,7 @@ class ThroughlineApp extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return auth.isAuthenticated ? const HomeShell() : const AuthScreen();
+          return auth.isAuthenticated ? const PersonaGate() : const AuthScreen();
         },
       ),
     );
