@@ -10,6 +10,7 @@ class AuthProvider extends ChangeNotifier {
   bool isLoading = true;
   bool isAuthenticated = false;
   String? username;
+  int? userId;
 
   /// Validates any stored token on app launch.
   Future<void> bootstrap() async {
@@ -23,6 +24,7 @@ class AuthProvider extends ChangeNotifier {
     if (me != null) {
       isAuthenticated = true;
       username = me['username'];
+      userId = me['id'];
     } else {
       await ApiClient.instance.clearToken();
     }
@@ -35,6 +37,7 @@ class AuthProvider extends ChangeNotifier {
       final r = await _authService.login(username: user, password: password);
       isAuthenticated = true;
       username = r['username'];
+      userId = r['id'];
       notifyListeners();
       return null;
     } on DioException catch (e) {
@@ -57,6 +60,7 @@ class AuthProvider extends ChangeNotifier {
       );
       isAuthenticated = true;
       username = r['username'];
+      userId = r['id'];
       notifyListeners();
       return null;
     } on DioException catch (e) {
@@ -68,6 +72,7 @@ class AuthProvider extends ChangeNotifier {
     await _authService.logout();
     isAuthenticated = false;
     username = null;
+    userId = null;
     notifyListeners();
   }
 
@@ -75,6 +80,7 @@ class AuthProvider extends ChangeNotifier {
   void forceLogout() {
     isAuthenticated = false;
     username = null;
+    userId = null;
     notifyListeners();
   }
 

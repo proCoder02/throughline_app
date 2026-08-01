@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../main.dart' show notifyProvider;
 import '../services/api_client.dart';
 import '../state/notify_provider.dart';
+import '../widgets/call_overlay.dart';
 import 'chats/chats_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'profiles/profiles_screen.dart';
@@ -48,26 +49,31 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final notify = context.watch<NotifyProvider>();
-    return Scaffold(
-      body: IndexedStack(index: _index, children: _screens),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
-        items: [
-          BottomNavigationBarItem(
-            icon: _badged(Icons.chat_bubble_outline, notify.unreadConversations.length),
-            label: 'Chats',
+    return Stack(
+      children: [
+        Scaffold(
+          body: IndexedStack(index: _index, children: _screens),
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            currentIndex: _index,
+            onTap: (i) => setState(() => _index = i),
+            items: [
+              BottomNavigationBarItem(
+                icon: _badged(Icons.chat_bubble_outline, notify.unreadConversations.length),
+                label: 'Chats',
+              ),
+              BottomNavigationBarItem(
+                icon: _badged(Icons.check_circle_outline, notify.taskBadge),
+                label: 'Tasks',
+              ),
+              const BottomNavigationBarItem(icon: Icon(Icons.people_outline), label: 'Profiles'),
+              const BottomNavigationBarItem(icon: Icon(Icons.group_outlined), label: 'Friends'),
+              const BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: _badged(Icons.check_circle_outline, notify.taskBadge),
-            label: 'Tasks',
-          ),
-          const BottomNavigationBarItem(icon: Icon(Icons.people_outline), label: 'Profiles'),
-          const BottomNavigationBarItem(icon: Icon(Icons.group_outlined), label: 'Friends'),
-          const BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
-        ],
-      ),
+        ),
+        const CallOverlay(),
+      ],
     );
   }
 

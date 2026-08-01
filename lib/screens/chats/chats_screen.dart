@@ -5,12 +5,13 @@ import 'package:provider/provider.dart';
 import '../../main.dart' show notifyProvider;
 import '../../models/conversation.dart';
 import '../../services/conversation_service.dart';
+import '../../state/listen_provider.dart';
 import '../../state/notify_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
 import 'chat_thread_screen.dart';
-import 'record_sheet.dart';
+import 'global_chat_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
@@ -31,21 +32,39 @@ class _ChatsScreenState extends State<ChatsScreen> {
     _future = _service.list();
   }
 
-  void _reload() => setState(() => _future = _service.list());
+  void _reload() {
+    final future = _service.list();
+    setState(() {
+      _future = future;
+    });
+  }
 
-  Future<void> _record() async {
-    final newId = await showRecordSheet(context);
-    if (newId != null && mounted) {
+  Future<void> _toggleListen(ListenProvider listen) async {
+    if (listen.isListening) {
+      await listen.stop();
       _reload();
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: newId)),
+      return;
+    }
+    try {
+      await listen.start(
+        onSessionStarted: (id) {
+          _reload();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: id)),
+          );
+        },
       );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not access microphone: $e')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final notify = context.watch<NotifyProvider>();
+    final listen = context.watch<ListenProvider>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chats'),
@@ -66,7 +85,28 @@ class _ChatsScreenState extends State<ChatsScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(onPressed: _record, child: const Icon(Icons.mic)),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'chat',
+            tooltip: 'Ask about your people & conversations',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
+            ),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: const Text('Chat'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'listen',
+            backgroundColor: listen.isListening ? AppColors.danger : null,
+            onPressed: () => _toggleListen(listen),
+            icon: Icon(listen.isListening ? Icons.stop : Icons.mic),
+            label: Text(listen.isListening ? 'Stop Listening' : 'Listen'),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () async => _reload(),
         child: FutureBuilder<List<Conversation>>(

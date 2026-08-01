@@ -25,10 +25,14 @@ class ConversationService {
     return (r.data as List).map((j) => ChatMessage.fromJson(j)).toList();
   }
 
-  Future<String> sendChat({required String prompt, required int conversationId}) async {
+  Future<String> sendChat({required String prompt, required int conversationId, String? transcript}) async {
     final r = await _api.dio.post('/chat', data: {
       'prompt': prompt,
       'conversation_id': conversationId,
+      // Only set while a live session for this conversation is in
+      // progress -- lets the LLM see lines not yet persisted to
+      // raw_transcript (spec §6).
+      if (transcript != null) 'transcript': transcript,
     });
     return r.data['reply'];
   }
@@ -54,5 +58,16 @@ class ConversationService {
 
   Future<void> analyze({required int conversationId}) {
     return _api.dio.post('/analyze', data: {'conversation_id': conversationId});
+  }
+
+  /// Persistent cross-session thread (§6) -- not scoped to any one conversation.
+  Future<List<ChatMessage>> globalChat() async {
+    final r = await _api.dio.get('/chat/global');
+    return (r.data as List).map((j) => ChatMessage.fromJson(j)).toList();
+  }
+
+  Future<String> sendGlobalChat(String prompt) async {
+    final r = await _api.dio.post('/chat/global', data: {'prompt': prompt});
+    return r.data['reply'] ?? 'No response.';
   }
 }

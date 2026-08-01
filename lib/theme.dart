@@ -18,6 +18,7 @@ class AppColors {
 }
 
 ThemeData buildAppTheme() {
+  final inputBorder = OutlineInputBorder(borderRadius: BorderRadius.circular(8));
   return ThemeData(
     useMaterial3: true,
     scaffoldBackgroundColor: AppColors.bgApp,
@@ -35,9 +36,22 @@ ThemeData buildAppTheme() {
     ),
     dividerColor: AppColors.border,
     textTheme: const TextTheme(
+      titleLarge: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600),
+      titleMedium: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600),
+      labelLarge: TextStyle(color: AppColors.text),
       bodyMedium: TextStyle(color: AppColors.text),
       bodySmall: TextStyle(color: AppColors.textSoft),
     ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.panel,
+      border: inputBorder,
+      enabledBorder: inputBorder.copyWith(borderSide: const BorderSide(color: AppColors.border)),
+      focusedBorder: inputBorder.copyWith(borderSide: const BorderSide(color: AppColors.accent, width: 2)),
+      labelStyle: const TextStyle(color: AppColors.textSoft),
+    ),
+    cardTheme: const CardThemeData(color: AppColors.panel, elevation: 1),
+    dialogTheme: const DialogThemeData(backgroundColor: AppColors.panel),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: AppColors.accent,
       foregroundColor: Colors.white,

@@ -13,7 +13,7 @@ class ProfileNote {
 
   factory ProfileNote.fromJson(Map<String, dynamic> json) => ProfileNote(
         observation: json['observation'],
-        createdAt: DateTime.parse(json['created_at']),
+        createdAt: DateTime.parse(json['created_at']).toLocal(),
         conversationId: json['conversation_id'],
         category: json['category'] ?? 'personal',
       );
@@ -35,7 +35,7 @@ class Profile {
   factory Profile.fromJson(String name, Map<String, dynamic> json) => Profile(
         name: name,
         categories: List<String>.from(json['categories'] ?? const []),
-        lastSeen: DateTime.parse(json['last_seen']),
+        lastSeen: DateTime.parse(json['last_seen']).toLocal(),
         notes: (json['notes'] as List<dynamic>? ?? const [])
             .map((n) => ProfileNote.fromJson(n))
             .toList(),

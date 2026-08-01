@@ -17,7 +17,7 @@ class Conversation {
 
   factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
         id: json['id'],
-        createdAt: DateTime.parse(json['created_at']),
+        createdAt: DateTime.parse(json['created_at']).toLocal(),
         title: json['title'],
         category: json['category'] ?? 'personal',
         rawTranscript: json['raw_transcript'],
