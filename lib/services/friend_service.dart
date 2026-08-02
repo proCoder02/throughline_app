@@ -15,4 +15,17 @@ class FriendService {
     final r = await _api.dio.get('/friends/$friendId/mood');
     return CompiledMood.fromJson(r.data as Map<String, dynamic>);
   }
+
+  Future<List<CallHistoryEntry>> callHistory(int friendId) async {
+    final r = await _api.dio.get('/friends/$friendId/calls');
+    return (r.data as List).map((j) => CallHistoryEntry.fromJson(j)).toList();
+  }
+
+  /// Empty string clears the nickname back to just showing their username.
+  Future<String?> setNickname(int friendId, String nickname) async {
+    final r = await _api.dio.post('/friends/$friendId/nickname', data: {'nickname': nickname});
+    return r.data['nickname'] as String?;
+  }
+
+  Future<void> remove(int friendId) => _api.dio.delete('/friends/$friendId');
 }

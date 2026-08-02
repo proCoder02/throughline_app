@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/category.dart';
@@ -6,6 +7,7 @@ import '../../services/category_service.dart';
 import '../../services/settings_service.dart';
 import '../../state/auth_provider.dart';
 import '../../theme.dart';
+import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -84,86 +86,180 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _loadCategories();
   }
 
+  void _copyFriendCode() {
+    if (_friendCode == null) return;
+    Clipboard.setData(ClipboardData(text: _friendCode!));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Friend code copied')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final categoryNames = _categories?.all ?? kCategories;
     return Scaffold(
+      backgroundColor: AppColors.bgApp,
       appBar: AppBar(title: const Text('Settings')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
+              padding: const EdgeInsets.all(12),
               children: [
-                ListTile(title: Text('Signed in as ${auth.username ?? ""}')),
-                const Divider(color: AppColors.border),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text('Personalization mode', style: TextStyle(color: AppColors.textSoft)),
-                ),
-                ...categoryNames.map(
-                  (c) => RadioListTile<String>(
-                    value: c,
-                    groupValue: _personalization,
-                    title: Text(c[0].toUpperCase() + c.substring(1)),
-                    onChanged: (v) {
-                      if (v != null) _updatePersonalization(v);
-                    },
-                  ),
-                ),
-                const Divider(color: AppColors.border),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text('Your categories', style: TextStyle(color: AppColors.textSoft)),
-                ),
-                ...(_categories?.custom ?? const []).map(
-                  (c) => ListTile(
-                    title: Text(c),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                      onPressed: () => _removeCategory(c),
+                _SettingsCard(
+                  children: [
+                    Row(
+                      children: [
+                        InitialAvatar(name: auth.username ?? '?', size: 44),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(auth.username ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                              const Text('Signed in', style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _newCategory,
-                          decoration: const InputDecoration(hintText: 'New category', isDense: true),
-                          onSubmitted: (_) => _addCategory(),
+                _SettingsCard(
+                  title: 'Personalization mode',
+                  children: categoryNames
+                      .map(
+                        (c) => RadioListTile<String>(
+                          value: c,
+                          groupValue: _personalization,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(c[0].toUpperCase() + c.substring(1)),
+                          onChanged: (v) {
+                            if (v != null) _updatePersonalization(v);
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+                _SettingsCard(
+                  title: 'Your categories',
+                  subtitle: 'personal/office/study always exist -- add your own on top.',
+                  children: [
+                    ...(_categories?.custom ?? const []).map(
+                      (c) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(c, style: const TextStyle(fontSize: 15))),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
+                              onPressed: () => _removeCategory(c),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      TextButton(onPressed: _addCategory, child: const Text('Add')),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _newCategory,
+                            decoration: const InputDecoration(hintText: 'New category name', isDense: true),
+                            onSubmitted: (_) => _addCategory(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(onPressed: _addCategory, child: const Text('Add')),
+                      ],
+                    ),
+                    if (_categoryError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(_categoryError!, style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+                      ),
+                  ],
                 ),
-                if (_categoryError != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Text(_categoryError!, style: const TextStyle(color: AppColors.danger)),
-                  ),
-                const Divider(color: AppColors.border),
-                ListTile(
-                  title: const Text('Friend code'),
-                  subtitle: SelectableText(
-                    _friendCode ?? '',
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 16),
-                  ),
+                _SettingsCard(
+                  title: 'Your friend code',
+                  subtitle: 'Share this so a friend can add you from the Friends tab.',
+                  children: [
+                    InkWell(
+                      onTap: _copyFriendCode,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _friendCode ?? '',
+                                style: const TextStyle(fontFamily: 'monospace', fontSize: 20, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            const Icon(Icons.copy_outlined, size: 20, color: AppColors.textSoft),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const Divider(color: AppColors.border),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      side: const BorderSide(color: AppColors.danger),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                     onPressed: () => context.read<AuthProvider>().logout(),
                     child: const Text('Log out'),
                   ),
                 ),
+                const SizedBox(height: 12),
               ],
             ),
+    );
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  final String? title;
+  final String? subtitle;
+  final List<Widget> children;
+
+  const _SettingsCard({this.title, this.subtitle, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(title!, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+                ),
+              if (subtitle != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(subtitle!, style: const TextStyle(fontSize: 13, color: AppColors.textSoft)),
+                ),
+              ...children,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

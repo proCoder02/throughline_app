@@ -27,7 +27,7 @@ class _FriendMoodScreenState extends State<FriendMoodScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("${widget.friend.username}'s mood")),
+      appBar: AppBar(title: Text("${widget.friend.displayName}'s mood")),
       body: FutureBuilder<CompiledMood>(
         future: _future,
         builder: (context, snap) {

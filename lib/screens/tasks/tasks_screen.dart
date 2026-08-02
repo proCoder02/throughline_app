@@ -20,6 +20,8 @@ class _TasksScreenState extends State<TasksScreen> {
   String _status = 'open';
   String? _category;
 
+  static const _statusLabels = {'open': 'Open', 'done': 'Done', 'all': 'All'};
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +40,40 @@ class _TasksScreenState extends State<TasksScreen> {
     _reload();
   }
 
+  Future<void> _edit(Task task) async {
+    final descController = TextEditingController(text: task.description);
+    final dueController = TextEditingController(text: task.dueDate ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit task'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: descController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Description'),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: dueController,
+              decoration: const InputDecoration(labelText: 'Due (e.g. Friday)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true || descController.text.trim().isEmpty) return;
+    await _service.edit(task.id, description: descController.text.trim(), dueDate: dueController.text.trim());
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,11 +87,9 @@ class _TasksScreenState extends State<TasksScreen> {
               _status = v;
               _future = _service.list(status: _status);
             }),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'open', child: Text('Open')),
-              PopupMenuItem(value: 'done', child: Text('Done')),
-              PopupMenuItem(value: 'all', child: Text('All')),
-            ],
+            itemBuilder: (context) => _statusLabels.entries
+                .map((e) => PopupMenuItem(value: e.key, child: Text(e.value)))
+                .toList(),
           ),
           CategoryMenu(selected: _category, onChanged: (v) => setState(() => _category = v)),
         ],
@@ -74,47 +108,102 @@ class _TasksScreenState extends State<TasksScreen> {
             var items = snap.data ?? [];
             if (_category != null) items = items.where((t) => t.category == _category).toList();
             if (items.isEmpty) {
-              return const Center(child: Text('No tasks', style: TextStyle(color: AppColors.textSoft)));
+              return Center(
+                child: Text(
+                  _status == 'open' ? 'No open tasks' : 'No ${_statusLabels[_status]!.toLowerCase()} tasks',
+                  style: const TextStyle(color: AppColors.textSoft),
+                ),
+              );
             }
             return ListView.separated(
               itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
-              itemBuilder: (context, i) {
-                final t = items[i];
-                final subtitle = (t.owner != null || t.dueDate != null)
-                    ? 'Owner: ${t.owner ?? "?"} · Due: ${t.dueDate ?? "?"}'
-                    : 'No details';
-                return ListTile(
-                  tileColor: AppColors.panel,
-                  leading: Icon(
-                    t.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                    color: t.isDone ? AppColors.accent : AppColors.textSoft,
-                  ),
-                  title: Text(
-                    t.description,
-                    style: t.isDone ? const TextStyle(decoration: TextDecoration.lineThrough) : null,
-                  ),
-                  subtitle: Text(subtitle),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (t.emailSent) const Icon(Icons.mail_outline, size: 18, color: AppColors.textSoft),
-                      if (t.conversationId != null)
-                        IconButton(
-                          icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ChatThreadScreen(conversationId: t.conversationId!),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  onTap: () => _toggle(t),
-                );
-              },
+              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 56),
+              itemBuilder: (context, i) => _TaskRow(
+                task: items[i],
+                onToggle: () => _toggle(items[i]),
+                onEdit: () => _edit(items[i]),
+              ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _TaskRow extends StatelessWidget {
+  final Task task;
+  final VoidCallback onToggle;
+  final VoidCallback onEdit;
+
+  const _TaskRow({required this.task, required this.onToggle, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    final details = [
+      if (task.owner != null) 'Owner: ${task.owner}',
+      if (task.dueDate != null) 'Due: ${task.dueDate}',
+    ].join('  ·  ');
+
+    return Material(
+      color: AppColors.panel,
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: task.isDone ? AppColors.accent : AppColors.textSoft,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      task.description,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: task.isDone ? AppColors.textSoft : AppColors.text,
+                        decoration: task.isDone ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
+                    if (details.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(details, style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft)),
+                    ],
+                  ],
+                ),
+              ),
+              if (task.emailSent)
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, top: 2),
+                  child: Icon(Icons.mail_outline, size: 18, color: AppColors.textSoft),
+                ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 20, color: AppColors.textSoft),
+                tooltip: 'Edit',
+                onPressed: onEdit,
+              ),
+              if (task.conversationId != null)
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline, size: 20, color: AppColors.textSoft),
+                  tooltip: 'View source conversation',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: task.conversationId!)),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

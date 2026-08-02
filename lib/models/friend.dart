@@ -1,11 +1,58 @@
 class Friend {
   final int id;
   final String username;
+  final String? nickname;
+  final DateTime? lastCallAt;
+  final bool? lastCallOutgoing;
+  final int callCount;
 
-  Friend({required this.id, required this.username});
+  Friend({
+    required this.id,
+    required this.username,
+    this.nickname,
+    this.lastCallAt,
+    this.lastCallOutgoing,
+    this.callCount = 0,
+  });
 
-  factory Friend.fromJson(Map<String, dynamic> json) =>
-      Friend(id: json['id'], username: json['username']);
+  /// Your own private alias for this friend, falling back to their
+  /// username when unset -- matches the web client's `nickname || username`.
+  String get displayName => (nickname != null && nickname!.isNotEmpty) ? nickname! : username;
+
+  factory Friend.fromJson(Map<String, dynamic> json) => Friend(
+        id: json['id'],
+        username: json['username'],
+        nickname: json['nickname'] as String?,
+        lastCallAt: json['last_call_at'] != null ? DateTime.parse(json['last_call_at']).toLocal() : null,
+        lastCallOutgoing: json['last_call_outgoing'] as bool?,
+        callCount: json['call_count'] ?? 0,
+      );
+}
+
+/// One entry in a friend's full call log (CallHistoryScreen) -- see
+/// GET /friends/<id>/calls.
+class CallHistoryEntry {
+  final int callId;
+  final DateTime createdAt;
+  final DateTime? endedAt;
+  final String status;
+  final bool outgoing;
+
+  CallHistoryEntry({
+    required this.callId,
+    required this.createdAt,
+    required this.endedAt,
+    required this.status,
+    required this.outgoing,
+  });
+
+  factory CallHistoryEntry.fromJson(Map<String, dynamic> json) => CallHistoryEntry(
+        callId: json['call_id'],
+        createdAt: DateTime.parse(json['created_at']).toLocal(),
+        endedAt: json['ended_at'] != null ? DateTime.parse(json['ended_at']).toLocal() : null,
+        status: json['status'],
+        outgoing: json['outgoing'] as bool,
+      );
 }
 
 /// A single compiled emoji for whichever 2-hour clock-aligned window has

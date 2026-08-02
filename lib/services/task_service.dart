@@ -11,4 +11,10 @@ class TaskService {
 
   Future<void> complete(int id) => _api.dio.post('/tasks/$id/complete');
   Future<void> reopen(int id) => _api.dio.post('/tasks/$id/reopen');
+
+  /// At least one of description/dueDate must be provided.
+  Future<void> edit(int id, {String? description, String? dueDate}) => _api.dio.post('/tasks/$id/edit', data: {
+        if (description != null) 'description': description,
+        if (dueDate != null) 'due_date': dueDate,
+      });
 }

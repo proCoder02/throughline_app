@@ -5,8 +5,9 @@ import '../../models/friend.dart';
 import '../../services/friend_service.dart';
 import '../../state/call_provider.dart';
 import '../../theme.dart';
+import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
-import 'friend_mood_screen.dart';
+import 'call_history_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -81,6 +82,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
     if (ids.isNotEmpty) await _startCall(ids);
   }
 
+  Future<void> _openFriend(Friend f) async {
+    // Rename/remove happen inside CallHistoryScreen's app bar -- reload on
+    // return so a changed nickname or a removal shows up immediately.
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CallHistoryScreen(friend: f)));
+    if (mounted) _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -98,7 +106,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         children: [
           if (!_pickingCall)
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: Column(
                 children: [
                   Row(
@@ -106,23 +114,39 @@ class _FriendsScreenState extends State<FriendsScreen> {
                       Expanded(
                         child: TextField(
                           controller: _codeController,
-                          decoration: const InputDecoration(
-                            hintText: 'Friend code',
-                            isDense: true,
-                            border: OutlineInputBorder(),
-                          ),
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: const InputDecoration(hintText: "Friend's code", isDense: true),
+                          onSubmitted: (_) => _addFriend(),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton(onPressed: _adding ? null : _addFriend, child: const Text('Add')),
+                      ElevatedButton(
+                        onPressed: _adding ? null : _addFriend,
+                        child: _adding
+                            ? const SizedBox(
+                                height: 16, width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Text('Add'),
+                      ),
                     ],
                   ),
                   if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+                      ),
                     ),
                 ],
+              ),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Pick who to call, then confirm below.', style: TextStyle(color: AppColors.textSoft)),
               ),
             ),
           Expanded(
@@ -139,7 +163,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   }
                   final friends = snap.data ?? [];
                   if (friends.isEmpty) {
-                    return const Center(child: Text('No friends yet', style: TextStyle(color: AppColors.textSoft)));
+                    return const Center(
+                      child: Text('No friends added yet', style: TextStyle(color: AppColors.textSoft)),
+                    );
                   }
                   return ListView.separated(
                     itemCount: friends.length,
@@ -150,6 +176,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                         final selected = _callSelection.contains(f.id);
                         return CheckboxListTile(
                           value: selected,
+                          activeColor: AppColors.accent,
                           onChanged: (v) => setState(() {
                             if (v == true) {
                               _callSelection.add(f.id);
@@ -157,21 +184,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
                               _callSelection.remove(f.id);
                             }
                           }),
-                          secondary: InitialAvatar(name: f.username),
-                          title: Text(f.username),
+                          secondary: InitialAvatar(name: f.displayName),
+                          title: Text(f.displayName),
                         );
                       }
-                      return ListTile(
-                        tileColor: AppColors.panel,
-                        leading: InitialAvatar(name: f.username),
-                        title: Text(f.username),
-                        subtitle: const Text('Tap to view their mood'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.call, color: AppColors.accent),
-                          onPressed: () => _startCall([f.id]),
-                        ),
-                        onTap: () => Navigator.of(context)
-                            .push(MaterialPageRoute(builder: (_) => FriendMoodScreen(friend: f))),
+                      return _FriendRow(
+                        friend: f,
+                        onTap: () => _openFriend(f),
+                        onCall: () => _startCall([f.id]),
                       );
                     },
                   );
@@ -182,14 +202,109 @@ class _FriendsScreenState extends State<FriendsScreen> {
           if (_pickingCall)
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 child: ElevatedButton(
                   onPressed: _callSelection.isEmpty ? null : _confirmGroupCall,
-                  child: Text('Call ${_callSelection.length}'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  ),
+                  child: Text(_callSelection.isEmpty ? 'Call' : 'Call (${_callSelection.length})'),
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A single friend row: avatar, name, last-call summary, and a single
+/// prominent call action. Mood/rename/remove intentionally live one level
+/// down (CallHistoryScreen's app bar) rather than crowding this row with
+/// more icons than a glance needs.
+class _FriendRow extends StatelessWidget {
+  final Friend friend;
+  final VoidCallback onTap;
+  final VoidCallback onCall;
+
+  const _FriendRow({required this.friend, required this.onTap, required this.onCall});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.panel,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              InitialAvatar(name: friend.displayName),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      friend.displayName,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        if (friend.lastCallAt != null) ...[
+                          Icon(
+                            friend.lastCallOutgoing == true ? Icons.call_made : Icons.call_received,
+                            size: 14,
+                            color: AppColors.textSoft,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Expanded(
+                          child: Text(
+                            formatLastCallSubtitle(
+                              lastCallAt: friend.lastCallAt,
+                              lastCallOutgoing: friend.lastCallOutgoing,
+                              callCount: friend.callCount,
+                            ),
+                            style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _CallButton(onPressed: onCall),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CallButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _CallButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.bubbleOut,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: const Padding(
+          padding: EdgeInsets.all(10),
+          child: Icon(Icons.call, color: AppColors.accentDark, size: 20),
+        ),
       ),
     );
   }

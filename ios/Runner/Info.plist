@@ -4,6 +4,15 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- Local dev backend (lib/config.dart) runs over plain http on the LAN --
+	     NSAllowsLocalNetworking permits that narrowly (local/private network
+	     addresses only), unlike NSAllowsArbitraryLoads which would disable
+	     App Transport Security app-wide. Remove before any App Store build. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
