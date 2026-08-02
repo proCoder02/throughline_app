@@ -22,4 +22,12 @@ class Conversation {
         category: json['category'] ?? 'personal',
         rawTranscript: json['raw_transcript'],
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'created_at': createdAt.toUtc().toIso8601String(),
+        'title': title,
+        'category': category,
+        'raw_transcript': rawTranscript,
+      };
 }

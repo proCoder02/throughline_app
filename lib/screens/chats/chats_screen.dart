@@ -22,21 +22,42 @@ class ChatsScreen extends StatefulWidget {
 
 class _ChatsScreenState extends State<ChatsScreen> {
   final _service = ConversationService();
-  late Future<List<Conversation>> _future;
+  List<Conversation>? _conversations;
+  bool _loading = true;
+  Object? _error;
   String? _category;
   String _search = '';
 
   @override
   void initState() {
     super.initState();
-    _future = _service.list();
+    // Show the on-device copy instantly if there is one, then always
+    // refresh from the network in the background -- mirrors the backend's
+    // own cache-aside pattern, just one tier further down the stack.
+    final cached = _service.listCached();
+    if (cached != null) {
+      _conversations = cached;
+      _loading = false;
+    }
+    _reload();
   }
 
-  void _reload() {
-    final future = _service.list();
-    setState(() {
-      _future = future;
-    });
+  Future<void> _reload() async {
+    try {
+      final items = await _service.list();
+      if (!mounted) return;
+      setState(() {
+        _conversations = items;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_conversations == null) _error = e;
+      });
+    }
   }
 
   Future<void> _toggleListen(ListenProvider listen) async {
@@ -108,47 +129,123 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => _reload(),
-        child: FutureBuilder<List<Conversation>>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return Center(child: Text('Failed to load chats: ${snap.error}'));
-            }
-            var items = snap.data ?? [];
-            if (_category != null) items = items.where((c) => c.category == _category).toList();
-            if (_search.isNotEmpty) {
-              items = items.where((c) => c.displayTitle.toLowerCase().contains(_search)).toList();
-            }
-            if (items.isEmpty) {
-              return const Center(child: Text('No conversations yet', style: TextStyle(color: AppColors.textSoft)));
-            }
-            return ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
-              itemBuilder: (context, i) {
-                final c = items[i];
-                final unread = notify.unreadConversations.contains(c.id);
-                return ListTile(
-                  tileColor: AppColors.panel,
-                  leading: InitialAvatar(name: c.displayTitle),
-                  title: Text(c.displayTitle),
-                  subtitle: Text(DateFormat('MMM d, HH:mm').format(c.createdAt)),
-                  trailing: unread
-                      ? const CircleAvatar(radius: 5, backgroundColor: AppColors.unreadBadge)
-                      : null,
-                  onTap: () {
-                    notifyProvider.clearConversation(c.id);
-                    Navigator.of(context)
-                        .push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
-                  },
-                );
-              },
-            );
+        onRefresh: _reload,
+        child: _buildBody(notify),
+      ),
+    );
+  }
+
+  Widget _buildBody(NotifyProvider notify) {
+    if (_conversations == null) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      return Center(child: Text('Failed to load chats: $_error'));
+    }
+    var items = _conversations!;
+    if (_category != null) items = items.where((c) => c.category == _category).toList();
+    if (_search.isNotEmpty) {
+      items = items.where((c) => c.displayTitle.toLowerCase().contains(_search)).toList();
+    }
+    if (items.isEmpty) {
+      return const Center(child: Text('No conversations yet', style: TextStyle(color: AppColors.textSoft)));
+    }
+    return ListView.separated(
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
+      itemBuilder: (context, i) {
+        final c = items[i];
+        final unread = notify.unreadConversations.contains(c.id);
+        return _ChatRow(
+          conversation: c,
+          unread: unread,
+          onTap: () {
+            notifyProvider.clearConversation(c.id);
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
           },
+        );
+      },
+    );
+  }
+}
+
+/// WhatsApp-style row: title + time share the top line, category sits below.
+/// Unread state bolds the title and shows a small accent dot next to the
+/// time, instead of the previous plain ListTile (which also had no
+/// explicit subtitle color and read as barely-visible gray-on-white).
+class _ChatRow extends StatelessWidget {
+  final Conversation conversation;
+  final bool unread;
+  final VoidCallback onTap;
+
+  const _ChatRow({required this.conversation, required this.unread, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final category = conversation.category;
+    final categoryLabel = category.isEmpty ? '' : category[0].toUpperCase() + category.substring(1);
+    return Material(
+      color: AppColors.panel,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InitialAvatar(name: conversation.displayTitle),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            conversation.displayTitle,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+                              color: AppColors.text,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          DateFormat('MMM d, HH:mm').format(conversation.createdAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: unread ? AppColors.accent : AppColors.textSoft,
+                            fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            categoryLabel,
+                            style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (unread)
+                          Container(
+                            width: 9,
+                            height: 9,
+                            margin: const EdgeInsets.only(left: 8),
+                            decoration: const BoxDecoration(color: AppColors.unreadBadge, shape: BoxShape.circle),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

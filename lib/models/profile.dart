@@ -20,12 +20,14 @@ class ProfileNote {
 }
 
 class Profile {
+  final int profileId;
   final String name;
   final List<String> categories;
   final DateTime lastSeen;
   final List<ProfileNote> notes;
 
   Profile({
+    required this.profileId,
     required this.name,
     required this.categories,
     required this.lastSeen,
@@ -33,6 +35,7 @@ class Profile {
   });
 
   factory Profile.fromJson(String name, Map<String, dynamic> json) => Profile(
+        profileId: json['profile_id'],
         name: name,
         categories: List<String>.from(json['categories'] ?? const []),
         lastSeen: DateTime.parse(json['last_seen']).toLocal(),

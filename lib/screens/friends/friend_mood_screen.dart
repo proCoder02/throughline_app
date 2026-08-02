@@ -16,7 +16,7 @@ class FriendMoodScreen extends StatefulWidget {
 
 class _FriendMoodScreenState extends State<FriendMoodScreen> {
   final _service = FriendService();
-  late Future<List<MoodEntry>> _future;
+  late Future<CompiledMood> _future;
 
   @override
   void initState() {
@@ -27,8 +27,8 @@ class _FriendMoodScreenState extends State<FriendMoodScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("${widget.friend.username}'s mood today")),
-      body: FutureBuilder<List<MoodEntry>>(
+      appBar: AppBar(title: Text("${widget.friend.displayName}'s mood")),
+      body: FutureBuilder<CompiledMood>(
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
@@ -37,21 +37,27 @@ class _FriendMoodScreenState extends State<FriendMoodScreen> {
           if (snap.hasError) {
             return Center(child: Text('Failed to load mood: ${snap.error}'));
           }
-          final entries = snap.data ?? [];
-          if (entries.isEmpty) {
-            return const Center(child: Text('No mood entries yet today', style: TextStyle(color: AppColors.textSoft)));
+          final mood = snap.data;
+          if (mood?.emoji == null) {
+            return const Center(child: Text('No mood data logged yet today', style: TextStyle(color: AppColors.textSoft)));
           }
-          return ListView.separated(
-            itemCount: entries.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
-            itemBuilder: (context, i) {
-              final e = entries[i];
-              return ListTile(
-                tileColor: AppColors.panel,
-                leading: Text(DateFormat.Hm().format(e.createdAt)),
-                title: Text(e.moodLabel),
-              );
-            },
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(mood!.emoji!, style: const TextStyle(fontSize: 64)),
+                const SizedBox(height: 8),
+                Text(
+                  mood.moodLabel![0].toUpperCase() + mood.moodLabel!.substring(1),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.text),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'As of ${DateFormat.Hm().format(mood.windowStart)}–${DateFormat.Hm().format(mood.windowEnd)}',
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.textSoft),
+                ),
+              ],
+            ),
           );
         },
       ),

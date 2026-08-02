@@ -8,4 +8,9 @@ class ProfileService {
     final r = await _api.dio.get('/profiles');
     return Profile.mapFromJson(Map<String, dynamic>.from(r.data));
   }
+
+  Future<void> rename(int profileId, String name) =>
+      _api.dio.post('/profiles/$profileId/rename', data: {'name': name});
+
+  Future<void> delete(int profileId) => _api.dio.delete('/profiles/$profileId');
 }

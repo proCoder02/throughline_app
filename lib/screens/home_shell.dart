@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../main.dart' show notifyProvider;
 import '../services/api_client.dart';
+import '../services/push_service.dart';
 import '../state/notify_provider.dart';
 import '../widgets/call_overlay.dart';
 import 'chats/chats_screen.dart';
@@ -37,6 +38,29 @@ class _HomeShellState extends State<HomeShell> {
     // in the authenticated area (this widget persists across tab switches).
     ApiClient.instance.readToken().then((token) {
       if (token != null) notifyProvider.start(token);
+    });
+
+    // FCM: reaches this device even when it's backgrounded/killed, unlike
+    // the WS socket above. onIncomingCallForeground reuses the exact same
+    // overlay the WS 'incoming_call' case drives, so a call rings the same
+    // way regardless of which channel got there first.
+    PushService.instance.onIncomingCallForeground = notifyProvider.handleIncomingCallPush;
+    PushService.instance.onMessageTapped = (data) {
+      if (data['type'] == 'incoming_call') notifyProvider.handleIncomingCallPush(data);
+      // task_created / reminder_email_sent / friend_mood_update: landing on
+      // HomeShell is enough for now -- the relevant tab's badge already
+      // reflects it once the WS reconnects. Deep-linking a tap straight to
+      // the task/conversation/friend is a reasonable follow-up, not done here.
+    };
+    PushService.instance.registerDevice();
+
+    // Cover the case the notification/tap callbacks above can't: the app
+    // was killed, the incoming_call background handler's full-screen-intent
+    // notification cold-started us, and this is the first normal main()
+    // run since -- consumePendingIncomingCall() picks up what the
+    // background isolate stashed before we existed to receive it.
+    consumePendingIncomingCall().then((data) {
+      if (data != null) notifyProvider.handleIncomingCallPush(data);
     });
   }
 

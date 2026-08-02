@@ -46,6 +46,23 @@ class NotifyProvider extends ChangeNotifier {
     }
   }
 
+  /// Fed by PushService when an `incoming_call` FCM message arrives --
+  /// mirrors the WS 'incoming_call' case in _handle, but tolerates FCM data
+  /// payloads where every value arrives as a String rather than JSON's
+  /// native int/string types.
+  void handleIncomingCallPush(Map<String, dynamic> data) {
+    final callId = int.tryParse(data['call_id']?.toString() ?? '');
+    final callerId = int.tryParse(data['caller_id']?.toString() ?? '');
+    if (callId == null || callerId == null) return;
+    incomingCall = IncomingCall(
+      callId: callId,
+      roomName: data['room_name']?.toString() ?? '',
+      callerId: callerId,
+      callerName: data['caller_name']?.toString() ?? '',
+    );
+    notifyListeners();
+  }
+
   void clearConversation(int id) {
     if (unreadConversations.remove(id)) notifyListeners();
   }

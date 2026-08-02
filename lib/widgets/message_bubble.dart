@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/chat_message.dart';
 import '../theme.dart';
+import 'formatted_text.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
@@ -27,7 +28,7 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(message.content, style: const TextStyle(color: AppColors.text)),
+            FormattedText(message.content, style: const TextStyle(color: AppColors.text)),
             const SizedBox(height: 2),
             Text(
               DateFormat.Hm().format(message.createdAt),

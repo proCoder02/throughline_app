@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'services/api_client.dart';
+import 'services/local_cache.dart';
+import 'services/push_service.dart';
 import 'state/auth_provider.dart';
 import 'state/call_provider.dart';
 import 'state/listen_provider.dart';
@@ -15,8 +18,10 @@ final notifyProvider = NotifyProvider();
 final callProvider = CallProvider();
 final listenProvider = ListenProvider();
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await LocalCache.instance.init();
   ApiClient.instance.onUnauthorized = () {
     notifyProvider.stop();
     authProvider.forceLogout();
@@ -34,6 +39,12 @@ void main() {
       child: const ThroughlineApp(),
     ),
   );
+
+  // Deliberately after runApp(), not before: Firebase.initializeApp() does
+  // native/network-adjacent work that has no reason to delay the first
+  // frame. No-ops safely if firebase_options.dart is still a placeholder --
+  // see PushService.init()/registerDevice(), which awaits this internally.
+  PushService.instance.init();
 }
 
 class ThroughlineApp extends StatelessWidget {
