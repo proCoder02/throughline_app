@@ -13,6 +13,8 @@ dependencies:
   dio: ^5.4.3
   web_socket_channel: ^2.4.0
   flutter_secure_storage: ^9.0.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
   provider: ^6.1.2
   intl: ^0.19.0
   record: ^7.1.1
@@ -27,6 +29,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
+
+# Generates the native (pre-Flutter-engine) splash screen -- fixes a plain
+# black frame some OEM Android skins (e.g. ColorOS) show for a moment
+# during a cold start, before the app's own LaunchTheme/windowBackground
+# even gets applied. Solid color only -- no logo exists yet; swap in an
+# `image:` key here (plus android_12.image) once there's a real one, then
+# re-run `dart run flutter_native_splash:create`.
+flutter_native_splash:
+  color: "#F0F2F5"
+  android_12:
+    color: "#F0F2F5"

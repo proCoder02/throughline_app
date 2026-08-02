@@ -43,15 +43,32 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   }
 
   Future<void> _load() async {
-    final conversation = await _service.get(widget.conversationId);
-    final chat = await _service.chat(widget.conversationId);
-    if (!mounted) return;
-    setState(() {
-      _conversation = conversation;
-      _messages = chat;
-      _loading = false;
-    });
-    _scrollToEnd(animate: false);
+    final cachedConversation = _service.getCached(widget.conversationId);
+    final cachedMessages = _service.chatCached(widget.conversationId);
+    if (cachedConversation != null && cachedMessages != null) {
+      setState(() {
+        _conversation = cachedConversation;
+        _messages = cachedMessages;
+        _loading = false;
+      });
+      _scrollToEnd(animate: false);
+    }
+    try {
+      final conversation = await _service.get(widget.conversationId);
+      final chat = await _service.chat(widget.conversationId);
+      if (!mounted) return;
+      setState(() {
+        _conversation = conversation;
+        _messages = chat;
+        _loading = false;
+      });
+      _scrollToEnd(animate: false);
+    } catch (_) {
+      // Offline/unreachable -- keep showing whatever was loaded from cache
+      // above (or the loading spinner, if there was none) rather than
+      // crashing the screen.
+      if (mounted && _loading) setState(() => _loading = false);
+    }
   }
 
   void _scrollToEnd({bool animate = true}) {

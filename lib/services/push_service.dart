@@ -105,6 +105,7 @@ class PushService {
   bool _initialized = false;
   bool _listenersAttached = false;
   String? _currentToken;
+  Future<void>? _initFuture;
 
   /// Set by whoever owns navigation/call state (home_shell.dart) before
   /// calling registerDevice(). Called for a tap on a background/killed-state
@@ -116,9 +117,18 @@ class PushService {
 
   bool get _isConfigured => DefaultFirebaseOptions.currentPlatform.apiKey != kFirebasePlaceholderMarker;
 
-  /// Call once, early in main() before runApp(). Safe to call even with no
-  /// Firebase project set up yet -- see _isConfigured above.
-  Future<void> init() async {
+  /// Call once, right after runApp() -- deliberately NOT awaited there and
+  /// NOT called before runApp(). Firebase.initializeApp() touches native/
+  /// network-adjacent APIs and can take real time on a cold start; blocking
+  /// the first frame on it is exactly the kind of wait the app's startup
+  /// rule (cached-data-first, network after) forbids. registerDevice()
+  /// below awaits _initFuture itself, so it's still safe to call as soon as
+  /// a user authenticates even if this hasn't resolved yet.
+  Future<void> init() {
+    return _initFuture = _doInit();
+  }
+
+  Future<void> _doInit() async {
     if (!_isConfigured) {
       debugPrint('[push] firebase_options.dart is still a placeholder -- push notifications disabled until '
           'you run `flutterfire configure`. Nothing else is affected.');
@@ -145,6 +155,7 @@ class PushService {
   /// backend registration is an upsert, and listener attachment is guarded
   /// so it only happens once per app run.
   Future<void> registerDevice() async {
+    if (_initFuture != null) await _initFuture;
     if (!_initialized) return;
     try {
       final settings = await FirebaseMessaging.instance.requestPermission();

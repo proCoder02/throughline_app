@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Process redis-server)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 6379 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" -c \"import redis; r = redis.from_url\\('redis://localhost:6379/0', decode_responses=True\\); print\\(r.ping\\(\\)\\); r.set\\('smoke_test','ok'\\); print\\(r.get\\('smoke_test'\\)\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" -c \"import redis; r = redis.from_url\\('redis://localhost:6379/0', decode_responses=True, protocol=2\\); print\\(r.ping\\(\\)\\); r.set\\('smoke_test','ok'\\); print\\(r.get\\('smoke_test'\\)\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-P3INW57-Desktop-throughline\\\\88a096eb-fac8-4ab4-bfc6-4acf4984ddac\\\\scratchpad\\\\redis_smoke_test.py\")",
+      "PowerShell(\\([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent\\(\\)\\).IsInRole\\([Security.Principal.WindowsBuiltInRole]::Administrator\\))",
+      "PowerShell(Start-Service -Name Redis)",
+      "PowerShell(Get-Service -Name Redis)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\redis-windows\\\\redis-cli.exe\" ping)",
+      "PowerShell(Get-Process redis-server -ErrorAction SilentlyContinue)"
+    ]
+  }
+}

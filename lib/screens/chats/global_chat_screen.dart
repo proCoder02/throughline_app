@@ -30,13 +30,25 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   }
 
   Future<void> _load() async {
-    final messages = await _service.globalChat();
-    if (!mounted) return;
-    setState(() {
-      _messages = messages;
-      _loading = false;
-    });
-    _scrollToEnd(animate: false);
+    final cached = _service.globalChatCached();
+    if (cached != null) {
+      setState(() {
+        _messages = cached;
+        _loading = false;
+      });
+      _scrollToEnd(animate: false);
+    }
+    try {
+      final messages = await _service.globalChat();
+      if (!mounted) return;
+      setState(() {
+        _messages = messages;
+        _loading = false;
+      });
+      _scrollToEnd(animate: false);
+    } catch (_) {
+      if (mounted && _loading) setState(() => _loading = false);
+    }
   }
 
   void _scrollToEnd({bool animate = true}) {

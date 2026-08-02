@@ -10,4 +10,10 @@ class ChatMessage {
         content: json['content'],
         createdAt: DateTime.parse(json['created_at']).toLocal(),
       );
+
+  Map<String, dynamic> toJson() => {
+        'role': role,
+        'content': content,
+        'created_at': createdAt.toUtc().toIso8601String(),
+      };
 }

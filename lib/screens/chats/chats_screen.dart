@@ -22,21 +22,42 @@ class ChatsScreen extends StatefulWidget {
 
 class _ChatsScreenState extends State<ChatsScreen> {
   final _service = ConversationService();
-  late Future<List<Conversation>> _future;
+  List<Conversation>? _conversations;
+  bool _loading = true;
+  Object? _error;
   String? _category;
   String _search = '';
 
   @override
   void initState() {
     super.initState();
-    _future = _service.list();
+    // Show the on-device copy instantly if there is one, then always
+    // refresh from the network in the background -- mirrors the backend's
+    // own cache-aside pattern, just one tier further down the stack.
+    final cached = _service.listCached();
+    if (cached != null) {
+      _conversations = cached;
+      _loading = false;
+    }
+    _reload();
   }
 
-  void _reload() {
-    final future = _service.list();
-    setState(() {
-      _future = future;
-    });
+  Future<void> _reload() async {
+    try {
+      final items = await _service.list();
+      if (!mounted) return;
+      setState(() {
+        _conversations = items;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_conversations == null) _error = e;
+      });
+    }
   }
 
   Future<void> _toggleListen(ListenProvider listen) async {
@@ -108,44 +129,40 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => _reload(),
-        child: FutureBuilder<List<Conversation>>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return Center(child: Text('Failed to load chats: ${snap.error}'));
-            }
-            var items = snap.data ?? [];
-            if (_category != null) items = items.where((c) => c.category == _category).toList();
-            if (_search.isNotEmpty) {
-              items = items.where((c) => c.displayTitle.toLowerCase().contains(_search)).toList();
-            }
-            if (items.isEmpty) {
-              return const Center(child: Text('No conversations yet', style: TextStyle(color: AppColors.textSoft)));
-            }
-            return ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
-              itemBuilder: (context, i) {
-                final c = items[i];
-                final unread = notify.unreadConversations.contains(c.id);
-                return _ChatRow(
-                  conversation: c,
-                  unread: unread,
-                  onTap: () {
-                    notifyProvider.clearConversation(c.id);
-                    Navigator.of(context)
-                        .push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
-                  },
-                );
-              },
-            );
-          },
-        ),
+        onRefresh: _reload,
+        child: _buildBody(notify),
       ),
+    );
+  }
+
+  Widget _buildBody(NotifyProvider notify) {
+    if (_conversations == null) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      return Center(child: Text('Failed to load chats: $_error'));
+    }
+    var items = _conversations!;
+    if (_category != null) items = items.where((c) => c.category == _category).toList();
+    if (_search.isNotEmpty) {
+      items = items.where((c) => c.displayTitle.toLowerCase().contains(_search)).toList();
+    }
+    if (items.isEmpty) {
+      return const Center(child: Text('No conversations yet', style: TextStyle(color: AppColors.textSoft)));
+    }
+    return ListView.separated(
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
+      itemBuilder: (context, i) {
+        final c = items[i];
+        final unread = notify.unreadConversations.contains(c.id);
+        return _ChatRow(
+          conversation: c,
+          unread: unread,
+          onTap: () {
+            notifyProvider.clearConversation(c.id);
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
+          },
+        );
+      },
     );
   }
 }
