@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'services/api_client.dart';
+import 'services/push_service.dart';
 import 'state/auth_provider.dart';
 import 'state/call_provider.dart';
 import 'state/listen_provider.dart';
@@ -15,12 +16,15 @@ final notifyProvider = NotifyProvider();
 final callProvider = CallProvider();
 final listenProvider = ListenProvider();
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   ApiClient.instance.onUnauthorized = () {
     notifyProvider.stop();
     authProvider.forceLogout();
   };
+  // No-ops safely if firebase_options.dart is still a placeholder -- see
+  // PushService.init().
+  await PushService.instance.init();
   authProvider.bootstrap();
 
   runApp(

@@ -38,6 +38,7 @@ class ListenProvider extends ChangeNotifier {
   int? pendingSpeakerIndex;
   List<Speaker> knownSpeakers = [];
   final List<String> tags = [];
+  final Map<String, Timer> _tagTimers = {};
   final List<TranscriptLine> lines = [];
 
   void Function(int conversationId)? _onSessionStarted;
@@ -64,6 +65,10 @@ class ListenProvider extends ChangeNotifier {
     speakerNames.clear();
     seenIndices.clear();
     tags.clear();
+    for (final timer in _tagTimers.values) {
+      timer.cancel();
+    }
+    _tagTimers.clear();
     pendingSpeakerIndex = null;
 
     _socket.connect(
@@ -111,13 +116,7 @@ class ListenProvider extends ChangeNotifier {
         final speakersFound = msg['speakers_found'] ?? 0;
         status = 'Auto-extracted $tasksFound task(s), notes on $speakersFound speaker(s).';
         final newTags = (msg['tags'] as List?)?.cast<String>() ?? const [];
-        if (newTags.isNotEmpty) {
-          final existing = tags.map((t) => t.toLowerCase()).toSet();
-          for (final t in newTags) {
-            if (!existing.contains(t.toLowerCase())) tags.add(t);
-          }
-          if (tags.length > 12) tags.removeRange(0, tags.length - 12);
-        }
+        if (newTags.isNotEmpty) _addTags(newTags);
         notifyListeners();
         break;
       case 'error':
@@ -152,9 +151,30 @@ class ListenProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Caps the accumulated (deduped) set at 5 and schedules each new tag to
+  /// auto-expire 20s after it appears, even if never tapped/dismissed.
+  void _addTags(List<String> newTags) {
+    final existing = tags.map((t) => t.toLowerCase()).toSet();
+    for (final t in newTags) {
+      if (existing.contains(t.toLowerCase())) continue;
+      existing.add(t.toLowerCase());
+      tags.add(t);
+      _tagTimers[t] = Timer(const Duration(seconds: 20), () => removeTag(t));
+    }
+    if (tags.length > 5) {
+      final evicted = tags.sublist(0, tags.length - 5);
+      tags.removeRange(0, tags.length - 5);
+      for (final t in evicted) {
+        _tagTimers.remove(t)?.cancel();
+      }
+    }
+  }
+
   void removeTag(String tag) {
-    tags.remove(tag);
-    notifyListeners();
+    if (tags.remove(tag)) {
+      _tagTimers.remove(tag)?.cancel();
+      notifyListeners();
+    }
   }
 
   Future<void> stop() async {
@@ -172,6 +192,10 @@ class ListenProvider extends ChangeNotifier {
     // below only ever runs once.
     if (_done) return;
     _done = true;
+    for (final timer in _tagTimers.values) {
+      timer.cancel();
+    }
+    _tagTimers.clear();
     isListening = false;
     _stopping = false;
     status = 'Stopped. Saved automatically.';

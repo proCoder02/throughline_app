@@ -8,6 +8,7 @@ import '../../state/listen_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/message_bubble.dart';
+import '../../widgets/tag_chip.dart';
 
 class ChatThreadScreen extends StatefulWidget {
   final int conversationId;
@@ -50,6 +51,19 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       _messages = chat;
       _loading = false;
     });
+    _scrollToEnd(animate: false);
+  }
+
+  void _scrollToEnd({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animate) {
+        _scrollController.animateTo(target, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      } else {
+        _scrollController.jumpTo(target);
+      }
+    });
   }
 
   bool _isLive(ListenProvider listen) => listen.isListening && listen.conversationId == widget.conversationId;
@@ -61,6 +75,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       _sending = true;
       _messages = [..._messages, ChatMessage(role: 'user', content: prompt, createdAt: DateTime.now())];
     });
+    _scrollToEnd();
     _promptController.clear();
     try {
       final live = _isLive(listen);
@@ -79,6 +94,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       setState(() {
         _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
       });
+      _scrollToEnd();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to send message')));
@@ -106,33 +122,6 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   void _tapTag(ListenProvider listen, String tag) {
     listen.removeTag(tag);
     _send(listen, tag);
-  }
-
-  void _showTranscript() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        builder: (context, scrollController) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Raw transcript', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  child: Text(_conversation?.rawTranscript ?? '(no transcript)'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _delete() async {
@@ -197,7 +186,6 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.info_outline), onPressed: _showTranscript),
           IconButton(icon: const Icon(Icons.delete_outline), onPressed: _delete),
         ],
       ),
@@ -236,11 +224,10 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                 spacing: 8,
                 runSpacing: 4,
                 children: listen.tags
-                    .map((t) => InputChip(
-                          label: Text(t),
-                          backgroundColor: AppColors.panel,
-                          onPressed: () => _tapTag(listen, t),
-                          onDeleted: () => listen.removeTag(t),
+                    .map((t) => TagChip(
+                          label: t,
+                          onTap: () => _tapTag(listen, t),
+                          onDismiss: () => listen.removeTag(t),
                         ))
                     .toList(),
               ),

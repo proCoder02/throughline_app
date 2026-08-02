@@ -165,7 +165,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                         tileColor: AppColors.panel,
                         leading: InitialAvatar(name: f.username),
                         title: Text(f.username),
-                        subtitle: const Text('Tap to view mood timeline'),
+                        subtitle: const Text('Tap to view their mood'),
                         trailing: IconButton(
                           icon: const Icon(Icons.call, color: AppColors.accent),
                           onPressed: () => _startCall([f.id]),

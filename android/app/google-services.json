@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "950963564511",
+    "project_id": "speechtotext-dceb9",
+    "storage_bucket": "speechtotext-dceb9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:950963564511:android:b73b090c56cfd62c159e6a",
+        "android_client_info": {
+          "package_name": "com.nodexdata.speechtotext"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBOUjE9DQMls1X08Itb9T_qTTHuxiXwLT4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../services/push_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final _authService = AuthService();
@@ -69,6 +70,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await PushService.instance.unregisterDevice();
     await _authService.logout();
     isAuthenticated = false;
     username = null;

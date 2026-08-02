@@ -11,8 +11,8 @@ class FriendService {
 
   Future<void> add(String friendCode) => _api.dio.post('/friends/add', data: {'friend_code': friendCode});
 
-  Future<List<MoodEntry>> mood(int friendId) async {
+  Future<CompiledMood> mood(int friendId) async {
     final r = await _api.dio.get('/friends/$friendId/mood');
-    return (r.data['entries'] as List).map((j) => MoodEntry.fromJson(j)).toList();
+    return CompiledMood.fromJson(r.data as Map<String, dynamic>);
   }
 }

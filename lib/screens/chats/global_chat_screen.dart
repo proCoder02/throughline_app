@@ -36,6 +36,19 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       _messages = messages;
       _loading = false;
     });
+    _scrollToEnd(animate: false);
+  }
+
+  void _scrollToEnd({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animate) {
+        _scrollController.animateTo(target, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      } else {
+        _scrollController.jumpTo(target);
+      }
+    });
   }
 
   Future<void> _send() async {
@@ -45,6 +58,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       _sending = true;
       _messages = [..._messages, ChatMessage(role: 'user', content: text, createdAt: DateTime.now())];
     });
+    _scrollToEnd();
     _promptController.clear();
     try {
       final reply = await _service.sendGlobalChat(text);
@@ -52,6 +66,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       setState(() {
         _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
       });
+      _scrollToEnd();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -60,6 +75,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
           ChatMessage(role: 'assistant', content: 'Request failed.', createdAt: DateTime.now()),
         ];
       });
+      _scrollToEnd();
     } finally {
       if (mounted) setState(() => _sending = false);
     }
