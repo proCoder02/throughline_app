@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../main.dart' show notifyProvider;
+import '../main.dart' show notifyProvider, callProvider;
 import '../services/api_client.dart';
 import '../services/push_service.dart';
 import '../state/notify_provider.dart';
@@ -48,11 +50,42 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    // Attached before anything below -- covers the case where this engine
+    // was already running (app backgrounded, not killed) when the user
+    // answered a call on the native ringing screen. That arrives via
+    // MainActivity.onNewIntent(), not a fresh configureFlutterEngine, so
+    // HomeShell.initState() never runs again to pull it -- native pushes it
+    // here instead (see MainActivity.kt's capturePendingCallAnswer()).
+    PushService.instance.onCallAnsweredNatively = _joinNativelyAnsweredCall;
+    // Fed the instant the native ConnectionService starts ringing a call
+    // (see MyFirebaseMessagingReceiver.kt) -- suppresses this device's own
+    // independent WS/FCM-driven ringing screen for that call_id entirely
+    // (see notify_provider.dart's guards), rather than showing it and racing
+    // to clear it once the user answers natively.
+    PushService.instance.onNativeRingStarted = notifyProvider.markNativelyRinging;
+    PushService.instance.listenForNativeCallAnswers();
+
+    // Checked -- and, if it fires, acted on -- before the WS socket below is
+    // even started: covers the true cold-start case (app was killed) where
+    // the native answer arrived as this Activity's launching Intent.
+    // CallProvider.status must flip away from idle before the WS connects,
+    // not after -- otherwise a reconnect can replay the still-pending
+    // incoming_call event for this exact call (see _filter_stale_call_events
+    // in app.py) while status is still idle, and NotifyProvider.incomingCall's
+    // own already-mid-call guard (see notify_provider.dart) hasn't kicked in
+    // yet, briefly resurfacing a real, tappable accept/decline screen for a
+    // call already answered.
+    final pendingAnswer = await consumePendingCallAnswer();
+    if (pendingAnswer != null) _joinNativelyAnsweredCall(pendingAnswer);
+
     // Connect the app-wide notify socket once, for as long as the user stays
     // in the authenticated area (this widget persists across tab switches).
-    ApiClient.instance.readToken().then((token) {
-      if (token != null) notifyProvider.start(token);
-    });
+    final token = await ApiClient.instance.readToken();
+    if (token != null) notifyProvider.start(token);
 
     // FCM: reaches this device even when it's backgrounded/killed, unlike
     // the WS socket above. onIncomingCallForeground reuses the exact same
@@ -66,16 +99,21 @@ class _HomeShellState extends State<HomeShell> {
       // reflects it once the WS reconnects. Deep-linking a tap straight to
       // the task/conversation/friend is a reasonable follow-up, not done here.
     };
-    PushService.instance.registerDevice();
+    unawaited(PushService.instance.registerDevice());
+  }
 
-    // Cover the case the notification/tap callbacks above can't: the app
-    // was killed, the incoming_call background handler's full-screen-intent
-    // notification cold-started us, and this is the first normal main()
-    // run since -- consumePendingIncomingCall() picks up what the
-    // background isolate stashed before we existed to receive it.
-    consumePendingIncomingCall().then((data) {
-      if (data != null) notifyProvider.handleIncomingCallPush(data);
-    });
+  void _joinNativelyAnsweredCall(Map<String, dynamic> data) {
+    final callId = int.tryParse(data['call_id']?.toString() ?? '');
+    final callerId = int.tryParse(data['caller_id']?.toString() ?? '');
+    // Clears out any stale ringing state a WS/FCM incoming_call event might
+    // already have set for this same call -- otherwise it can resurface as a
+    // phantom ringing screen once this call ends and CallProvider.status
+    // returns to idle.
+    notifyProvider.clearIncomingCall();
+    if (callId != null) {
+      notifyProvider.clearNativelyRinging(callId);
+      unawaited(callProvider.joinCall(callId, callerId: callerId ?? 0));
+    }
   }
 
   @override

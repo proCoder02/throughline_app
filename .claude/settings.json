@@ -54,7 +54,18 @@
       "PowerShell(Get-Content \"$env:TEMP\\\\live_app_err.log\" -Tail 5)",
       "PowerShell($env:FIREBASE_CREDENTIALS_PATH)",
       "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-P3INW57-Desktop-throughline\\\\88a096eb-fac8-4ab4-bfc6-4acf4984ddac\\\\scratchpad\\\\test_firebase_init.py\")",
-      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" -m py_compile \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\app.py\"; echo \"backend compile exit: $LASTEXITCODE\")"
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" -m py_compile \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\app.py\"; echo \"backend compile exit: $LASTEXITCODE\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" devices)",
+      "PowerShell(flutter build apk --release 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 install -r \"build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell getprop ro.build.version.release)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell getprop ro.build.version.sdk)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell input keyevent KEYCODE_HOME)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 logcat -c)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell monkey -p com.nodexdata.speechtotext -c android.intent.category.LAUNCHER 1)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell am force-stop com.nodexdata.speechtotext)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell pidof com.nodexdata.speechtotext)"
     ],
     "additionalDirectories": [
       "C:\\Users\\P3INW57"

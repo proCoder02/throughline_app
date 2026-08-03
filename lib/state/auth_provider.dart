@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/local_cache.dart';
@@ -33,6 +36,13 @@ class AuthProvider extends ChangeNotifier {
     isAuthenticated = true;
     isLoading = false;
     notifyListeners();
+
+    // Backfill the native ConnectionService token store (see
+    // NativeAuthStore.kt) for a session that predates that native store
+    // existing, or a device that just reinstalled the app -- ApiClient's own
+    // saveToken() keeps this in sync going forward, but that only fires on
+    // an actual login/register, not on resuming an already-stored session.
+    unawaited(cacheTokenForNative(token, ApiConfig.baseUrl));
 
     // Refresh username/userId in the background -- best-effort, since the
     // gate decision above has already been made.

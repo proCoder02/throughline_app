@@ -1,128 +1,34 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/services.dart';
 
 import '../firebase_options.dart';
 import 'api_client.dart';
 
-const _kIncomingCallChannel = AndroidNotificationChannel(
-  'incoming_call_channel',
-  'Incoming calls',
-  description: 'Rings for incoming voice calls',
-  importance: Importance.max,
-  sound: RawResourceAndroidNotificationSound('incoming_call_ringtone'),
-  playSound: true,
-  enableVibration: true,
-);
-
-const _kPendingCallStorageKey = 'pending_incoming_call';
-
-/// A background isolate (killed-app case) can't touch the running app's
-/// providers directly -- persist the call data here, then HomeShell reads
-/// and clears it on the next normal startup, regardless of whether that
-/// startup was triggered by the full-screen-intent notification, a manual
-/// tap, or just the user opening the app after noticing it.
-Future<void> _savePendingIncomingCall(Map<String, dynamic> data) async {
-  try {
-    await const FlutterSecureStorage().write(key: _kPendingCallStorageKey, value: jsonEncode(data));
-  } catch (_) {
-    // Best-effort -- worst case the call just doesn't auto-show once opened.
-  }
-}
-
-Future<Map<String, dynamic>?> consumePendingIncomingCall() async {
-  const storage = FlutterSecureStorage();
-  try {
-    final raw = await storage.read(key: _kPendingCallStorageKey);
-    if (raw == null) return null;
-    await storage.delete(key: _kPendingCallStorageKey);
-    return jsonDecode(raw) as Map<String, dynamic>;
-  } catch (_) {
-    return null;
-  }
-}
-
-/// Discards a pending incoming call without acting on it -- used when
-/// call_ended arrives before the app was ever opened to consume it, so a
-/// later cold start doesn't resurrect a call that's already over.
-Future<void> _clearPendingIncomingCall() async {
-  try {
-    await const FlutterSecureStorage().delete(key: _kPendingCallStorageKey);
-  } catch (_) {
-    // Best-effort -- worst case a stale entry lingers until overwritten by
-    // the next real incoming call.
-  }
-}
-
-/// Stable id matches _showIncomingCallNotification's `plugin.show(...)`
-/// call below, so this cancels exactly that notification.
-final _kIncomingCallNotificationId = 'incoming_call'.hashCode;
-
-Future<void> _cancelIncomingCallNotification() async {
-  try {
-    await FlutterLocalNotificationsPlugin().cancel(_kIncomingCallNotificationId);
-  } catch (_) {
-    // Best-effort -- worst case the notification lingers until manually
-    // dismissed, same as today's behavior for this whole event type.
-  }
-}
-
-Future<void> _showIncomingCallNotification(RemoteMessage message) async {
-  final plugin = FlutterLocalNotificationsPlugin();
-  await plugin.initialize(const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')));
-  await plugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(_kIncomingCallChannel);
-
-  final callerName = message.data['caller_name'] ?? 'Someone';
-  await plugin.show(
-    // Stable id: a second incoming_call push (e.g. a retry) replaces the
-    // same notification instead of stacking duplicates.
-    'incoming_call'.hashCode,
-    'Incoming call',
-    '$callerName is calling...',
-    NotificationDetails(
-      android: AndroidNotificationDetails(
-        _kIncomingCallChannel.id,
-        _kIncomingCallChannel.name,
-        channelDescription: _kIncomingCallChannel.description,
-        importance: Importance.max,
-        priority: Priority.high,
-        fullScreenIntent: true,
-        category: AndroidNotificationCategory.call,
-        sound: _kIncomingCallChannel.sound,
-        playSound: true,
-        ongoing: true,
-        autoCancel: true,
-      ),
-    ),
-  );
-}
+/// Bridges to the native Android ConnectionService integration (see
+/// android/app/.../MainActivity.kt, CallConnectionService.kt,
+/// MyFirebaseMessagingReceiver.kt): incoming_call/call_ended pushes are now
+/// intercepted natively while the app is backgrounded/killed, showing the
+/// OS's own instant ringing UI instead of waiting for the whole Flutter
+/// engine to cold-boot. This channel is how Dart (a) keeps a native-owned
+/// copy of the auth token in sync, so a native Decline can call the backend
+/// without needing Flutter running at all, and (b) picks up "the user just
+/// answered via the native screen" once its own engine is ready.
+const _kCallChannel = MethodChannel('com.nodexdata.speechtotext/call');
 
 /// Top-level, not a method -- FCM requires the background handler to be a
 /// top-level or static function annotated with vm:entry-point so it can run
-/// in its own isolate while the app is killed. incoming_call gets a custom
-/// full-screen-intent notification (see above); every other type is left to
-/// the OS's automatic display of the push's own `notification` payload --
-/// except call_ended, which is data-only (no visible notification of its
-/// own) and exists purely to cancel the incoming_call one: it's `ongoing:
-/// true` and never auto-expires, so without this a call the caller
-/// cancelled before this device answered would ring forever.
+/// in its own isolate while the app is killed. incoming_call/call_ended no
+/// longer reach here at all while backgrounded/killed (the native receiver
+/// intercepts them first, see MyFirebaseMessagingReceiver.kt); every other
+/// push type is left entirely to the OS's automatic display of its own
+/// `notification` payload. Kept registered (rather than removed) since
+/// FirebaseMessaging.onBackgroundMessage still expects a handler to exist.
 @pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  if (message.data['type'] == 'incoming_call') {
-    await _savePendingIncomingCall(message.data);
-    await _showIncomingCallNotification(message);
-  } else if (message.data['type'] == 'call_ended') {
-    await _cancelIncomingCallNotification();
-    await _clearPendingIncomingCall();
-  }
-}
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 /// Mirrors the backend's four send_fcm_to_user event types: incoming_call,
 /// task_created, reminder_email_sent, friend_mood_update (see
@@ -147,6 +53,46 @@ class PushService {
   void Function(Map<String, dynamic> data)? onMessageTapped;
   void Function(Map<String, dynamic> data)? onIncomingCallForeground;
 
+  /// Fed by MainActivity.kt's capturePendingCallAnswer() when the user
+  /// answers a call on the native ringing screen WHILE the Flutter engine is
+  /// already running (app was backgrounded, not killed) -- delivered via
+  /// onNewIntent rather than a fresh configureFlutterEngine, so it reaches
+  /// Dart as a push through this handler rather than the one-time
+  /// consumePendingCallAnswer() pull done at HomeShell startup, which never
+  /// runs again for an engine that was already alive.
+  void Function(Map<String, dynamic> data)? onCallAnsweredNatively;
+
+  /// Fed by MyFirebaseMessagingReceiver.kt the instant it intercepts an
+  /// incoming_call push and starts the native ring (not just once answered)
+  /// -- lets NotifyProvider suppress its own WS/FCM-driven ringing screen for
+  /// that call_id from the very start, rather than briefly showing one and
+  /// racing to clear it when the user answers natively. The engine can be
+  /// alive-but-backgrounded at that point (not killed), with its own WS
+  /// socket about to independently receive the very same incoming_call.
+  void Function(int callId)? onNativeRingStarted;
+
+  bool _callChannelHandlerAttached = false;
+
+  /// Call once, as early as possible (before any call could plausibly come
+  /// in) -- sets up the Dart side of the bidirectional call channel so a
+  /// native answer on an already-running engine has somewhere to land.
+  void listenForNativeCallAnswers() {
+    if (!Platform.isAndroid || _callChannelHandlerAttached) return;
+    _callChannelHandlerAttached = true;
+    _kCallChannel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'callAnswered':
+          onCallAnsweredNatively?.call(Map<String, dynamic>.from(call.arguments as Map));
+          break;
+        case 'nativeRingStarted':
+          final data = Map<String, dynamic>.from(call.arguments as Map);
+          final callId = int.tryParse(data['call_id']?.toString() ?? '');
+          if (callId != null) onNativeRingStarted?.call(callId);
+          break;
+      }
+    });
+  }
+
   bool get _isConfigured => DefaultFirebaseOptions.currentPlatform.apiKey != kFirebasePlaceholderMarker;
 
   /// Call once, right after runApp() -- deliberately NOT awaited there and
@@ -169,12 +115,6 @@ class PushService {
     try {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      // Created once, persists forever at the OS level -- doing this on
-      // every normal launch guarantees it exists before any background
-      // isolate (app killed) ever needs to use it.
-      await FlutterLocalNotificationsPlugin()
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(_kIncomingCallChannel);
       _initialized = true;
     } catch (e) {
       debugPrint('[push] Firebase.initializeApp failed, push notifications disabled: $e');
@@ -217,21 +157,18 @@ class PushService {
     FirebaseMessaging.instance.onTokenRefresh.listen(_sendTokenToBackend);
 
     // Foreground: only incoming_call gets special handling (populate the
-    // same overlay the WS path drives) -- the other three types are
-    // already covered by the live /ws/notify connection while the app is
-    // in foreground, so acting on them here too would double-count badges.
-    // call_ended is the one exception worth a defensive cancel here too: if
-    // the incoming_call notification was shown just before the app came to
-    // foreground, the live WS path clears the in-app overlay but wouldn't
-    // otherwise touch that already-posted system notification.
+    // same overlay the live WS path drives) -- the other three types are
+    // already covered by the live /ws/notify connection while the app is in
+    // foreground, so acting on them here too would double-count badges.
+    // call_ended needs nothing here anymore: the native receiver only ever
+    // intercepts it while backgrounded (see MyFirebaseMessagingReceiver.kt),
+    // so while foregrounded this message is left to flow through the
+    // existing NotifyProvider/live-socket handling exactly as it always did.
     FirebaseMessaging.onMessage.listen((msg) {
       debugPrint('[push] foreground message received: type=${msg.data['type']} data=${msg.data} '
           'notif=${msg.notification?.title}/${msg.notification?.body}');
       if (msg.data['type'] == 'incoming_call') {
         onIncomingCallForeground?.call(msg.data);
-      } else if (msg.data['type'] == 'call_ended') {
-        _cancelIncomingCallNotification();
-        _clearPendingIncomingCall();
       }
     });
 
@@ -265,5 +202,45 @@ class PushService {
     } catch (_) {
       // Best-effort -- the token row just goes stale server-side otherwise.
     }
+  }
+}
+
+/// Keeps the native-side token store (NativeAuthStore.kt) in sync -- called
+/// from api_client.dart whenever the token is saved/cleared. Android-only;
+/// no-ops harmlessly on other platforms (the channel simply won't be
+/// implemented there, and Telecom/ConnectionService is Android-specific
+/// anyway).
+Future<void> cacheTokenForNative(String token, String baseUrl) async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _kCallChannel.invokeMethod('cacheTokenForNative', {'token': token, 'baseUrl': baseUrl});
+  } catch (_) {
+    // Best-effort -- worst case a native Decline falls back to the
+    // backend's own ring-timeout worker instead of being instant.
+  }
+}
+
+Future<void> clearTokenForNative() async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _kCallChannel.invokeMethod('clearTokenForNative');
+  } catch (_) {
+    // Best-effort.
+  }
+}
+
+/// Checks whether this cold start was launched by the user answering a call
+/// on the native ringing screen (see CallConnection.kt's onAnswer(), which
+/// launches MainActivity with call data as Intent extras). Replaces the old
+/// consumePendingIncomingCall() (SecureStorage-based) -- read-once-and-clear,
+/// same as before, just sourced from the launching Intent instead.
+Future<Map<String, dynamic>?> consumePendingCallAnswer() async {
+  if (!Platform.isAndroid) return null;
+  try {
+    final result = await _kCallChannel.invokeMethod('getPendingCallAnswer');
+    if (result == null) return null;
+    return Map<String, dynamic>.from(result as Map);
+  } catch (_) {
+    return null;
   }
 }

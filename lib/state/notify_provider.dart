@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../main.dart' show callProvider;
 import '../models/call.dart';
 import '../services/notify_socket.dart';
+import 'call_provider.dart' show CallStatus;
 
 /// Badge state + call signaling fed by /ws/notify. Connect once app-wide
 /// while authenticated.
@@ -12,9 +13,23 @@ class NotifyProvider extends ChangeNotifier {
   int taskBadge = 0;
   IncomingCall? incomingCall;
 
+  // Call ids the native ConnectionService is already ringing for (see
+  // PushService.onNativeRingStarted / MyFirebaseMessagingReceiver.kt) --
+  // this device's own live WS socket (or a still-in-flight foreground FCM
+  // delivery) can independently receive the very same incoming_call while
+  // that native ring is up, and without this it would show its own
+  // accept/decline screen for a call already ringing (and about to be
+  // answered) natively. Cleared once the call is answered/ends so the set
+  // doesn't grow without bound over a long session.
+  final Set<int> _nativelyRingingCallIds = {};
+
   void start(String token) {
     _socket.connect(token, onEvent: _handle);
   }
+
+  void markNativelyRinging(int callId) => _nativelyRingingCallIds.add(callId);
+
+  void clearNativelyRinging(int callId) => _nativelyRingingCallIds.remove(callId);
 
   void _handle(Map<String, dynamic> event) {
     switch (event['type']) {
@@ -31,6 +46,20 @@ class NotifyProvider extends ChangeNotifier {
         }
         break;
       case 'incoming_call':
+        // Every call push arrives twice (WS + FCM, see send_fcm_to_user/
+        // push_notification in app.py's create_call), and a WS reconnect can
+        // replay a still-pending one (see _filter_stale_call_events in
+        // app.py) -- ignore it entirely once this device is already
+        // joining/on a call, otherwise a redelivery of the very call just
+        // answered can re-populate incomingCall and pop the accept/decline
+        // screen right back up on top of the call in progress.
+        if (callProvider.status != CallStatus.idle || _nativelyRingingCallIds.contains(event['call_id'])) {
+          debugPrint('[notify] WS incoming_call ${event['call_id']} suppressed, '
+              'callProvider.status=${callProvider.status}, '
+              'nativelyRinging=${_nativelyRingingCallIds.contains(event['call_id'])}');
+          break;
+        }
+        debugPrint('[notify] WS incoming_call ${event['call_id']} -> showing ringing screen');
         incomingCall = IncomingCall(
           callId: event['call_id'],
           roomName: event['room_name'],
@@ -54,6 +83,7 @@ class NotifyProvider extends ChangeNotifier {
         // same way an explicit decline already does.
         final id = event['call_id'];
         if (id != null) {
+          _nativelyRingingCallIds.remove(id);
           if (incomingCall?.callId == id) {
             incomingCall = null;
             notifyListeners();
@@ -72,6 +102,13 @@ class NotifyProvider extends ChangeNotifier {
     final callId = int.tryParse(data['call_id']?.toString() ?? '');
     final callerId = int.tryParse(data['caller_id']?.toString() ?? '');
     if (callId == null || callerId == null) return;
+    if (callProvider.status != CallStatus.idle || _nativelyRingingCallIds.contains(callId)) {
+      debugPrint('[notify] FCM incoming_call $callId suppressed, '
+          'callProvider.status=${callProvider.status}, '
+          'nativelyRinging=${_nativelyRingingCallIds.contains(callId)}');
+      return;
+    }
+    debugPrint('[notify] FCM incoming_call $callId -> showing ringing screen');
     incomingCall = IncomingCall(
       callId: callId,
       roomName: data['room_name']?.toString() ?? '',

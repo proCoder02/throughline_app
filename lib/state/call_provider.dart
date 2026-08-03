@@ -27,6 +27,20 @@ class CallProvider extends ChangeNotifier {
   List<String> participantNames = [];
   final List<String> dropNotices = [];
 
+  // WhatsApp-style "minimize and keep browsing the app" -- true collapses
+  // CallOverlay down to a small tappable pill (see call_overlay.dart) while
+  // the call itself (LiveKit room, recording, etc.) keeps running unchanged
+  // underneath. Only meaningful once connecting/active; never true for the
+  // still-ringing incoming screen (see CallOverlay's showIncoming check).
+  bool isMinimized = false;
+
+  DateTime? _connectedAt;
+  Timer? _durationTicker;
+
+  /// Elapsed call time once active, for the ticking mm:ss display -- zero
+  /// (not null) so callers can format it unconditionally.
+  Duration get elapsed => _connectedAt == null ? Duration.zero : DateTime.now().difference(_connectedAt!);
+
   lk.Room? _room;
   lk.EventsListener<lk.RoomEvent>? _listener;
   String? _recordingPath;
@@ -40,17 +54,51 @@ class CallProvider extends ChangeNotifier {
 
   Future<void> startCall(List<int> friendIds) async {
     _initiatorIdentity = authProvider.userId?.toString();
+    // Flip out of idle before the network round-trip below, not after --
+    // CallOverlay treats status == idle as "no active/joining call" and
+    // will otherwise still render a stale incoming-call screen (from a WS/
+    // FCM incoming_call event that arrives during this await) on top of a
+    // call the user already answered natively (see CallConnection.kt).
+    status = CallStatus.connecting;
+    notifyListeners();
     final info = await _service.start(friendIds);
     await _connect(info);
   }
 
   Future<void> joinCall(int callId, {required int callerId}) async {
     _initiatorIdentity = callerId.toString();
-    final info = await _service.join(callId);
-    await _connect(info);
+    status = CallStatus.connecting;
+    notifyListeners();
+    try {
+      final info = await _service.join(callId);
+      await _connect(info);
+    } catch (e) {
+      // Without this, a failed join (network blip, call already ended
+      // server-side by the ring-timeout worker, etc.) left status stuck on
+      // CallStatus.connecting forever -- an unrecoverable "Calling..."
+      // screen with no way back, since nothing else ever resets it.
+      debugPrint('[call] joinCall($callId) failed: $e');
+      status = CallStatus.idle;
+      notifyListeners();
+    }
   }
 
-  Future<void> declineCall(int callId) => _service.decline(callId);
+  Future<void> declineCall(int callId) {
+    debugPrint('[call] declineCall($callId)');
+    return _service.decline(callId);
+  }
+
+  void minimize() {
+    if (status == CallStatus.idle || isMinimized) return;
+    isMinimized = true;
+    notifyListeners();
+  }
+
+  void maximize() {
+    if (!isMinimized) return;
+    isMinimized = false;
+    notifyListeners();
+  }
 
   /// Fired by NotifyProvider on a `call_declined` push -- the backend only
   /// sends this when nobody is left who could still join, so it's always
@@ -94,6 +142,9 @@ class CallProvider extends ChangeNotifier {
     _room = room;
     _listener = listener;
     status = CallStatus.active;
+    _connectedAt = DateTime.now();
+    _durationTicker?.cancel();
+    _durationTicker = Timer.periodic(const Duration(seconds: 1), (_) => notifyListeners());
     _refreshRoster();
     notifyListeners();
 
@@ -140,6 +191,10 @@ class CallProvider extends ChangeNotifier {
     final listener = _listener;
 
     status = CallStatus.idle;
+    isMinimized = false;
+    _connectedAt = null;
+    _durationTicker?.cancel();
+    _durationTicker = null;
     _room = null;
     _listener = null;
     notifyListeners();

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config.dart';
+import 'push_service.dart';
 
 /// Thin Dio wrapper: attaches the bearer token to every request and clears it
 /// (routing back to the auth screen) on any 401.
@@ -39,7 +40,15 @@ class ApiClient {
 
   Dio get dio => _dio;
 
-  Future<void> saveToken(String token) => _storage.write(key: 'token', value: token);
+  Future<void> saveToken(String token) async {
+    await _storage.write(key: 'token', value: token);
+    await cacheTokenForNative(token, ApiConfig.baseUrl);
+  }
+
   Future<String?> readToken() => _storage.read(key: 'token');
-  Future<void> clearToken() => _storage.delete(key: 'token');
+
+  Future<void> clearToken() async {
+    await _storage.delete(key: 'token');
+    await clearTokenForNative();
+  }
 }

@@ -7,8 +7,17 @@ import '../state/call_provider.dart';
 import '../state/notify_provider.dart';
 import '../theme.dart';
 
+String _fmtDuration(Duration d) {
+  final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return '$m:$s';
+}
+
 /// Global overlay: full-screen incoming/active call UI, WhatsApp-style.
-/// Mounted once in home_shell.dart so it survives tab switches.
+/// Mounted once in home_shell.dart so it survives tab switches. Once
+/// connecting/active (never for the still-ringing incoming screen), this can
+/// also collapse to a small tappable pill (see _MinimizedCallPill) so the
+/// user can keep browsing the rest of the app mid-call, same as WhatsApp.
 class CallOverlay extends StatelessWidget {
   const CallOverlay({super.key});
 
@@ -20,17 +29,60 @@ class CallOverlay extends StatelessWidget {
     final showIncoming = call.status == CallStatus.idle ? notify.incomingCall : null;
     if (showIncoming != null) {
       Ringtone.start();
-    } else {
-      Ringtone.stop();
-    }
-
-    if (showIncoming != null) {
       return _CallScreen(incoming: showIncoming);
     }
-    if (call.status != CallStatus.idle) {
-      return const _CallScreen();
-    }
-    return const SizedBox.shrink();
+    Ringtone.stop();
+
+    if (call.status == CallStatus.idle) return const SizedBox.shrink();
+    if (call.isMinimized) return const _MinimizedCallPill();
+    return const _CallScreen();
+  }
+}
+
+/// Small tappable pill shown in place of the full-screen call UI once
+/// minimized -- only occupies space near the top of the screen, so
+/// everything else in the Stack underneath (the normal tabbed app UI)
+/// stays fully interactive.
+class _MinimizedCallPill extends StatelessWidget {
+  const _MinimizedCallPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final call = context.watch<CallProvider>();
+    final name = call.participantNames.isNotEmpty ? call.participantNames.first : 'Call';
+    final subtitle = call.status == CallStatus.connecting ? 'Calling...' : _fmtDuration(call.elapsed);
+
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Material(
+            color: AppColors.accent,
+            borderRadius: BorderRadius.circular(24),
+            elevation: 4,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: call.maximize,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.call, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Text('$name · $subtitle',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.keyboard_arrow_down, color: Colors.white70, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -59,14 +111,15 @@ class _CallScreen extends StatelessWidget {
       status = 'Calling...';
     } else if (call.participantNames.isEmpty) {
       status = 'Waiting for others to join...';
+    } else if (call.participantNames.length == 1) {
+      // Matches WhatsApp: once connected, the ticking timer is the status,
+      // not a static "on call with" label.
+      status = _fmtDuration(call.elapsed);
     } else {
-      final others = call.participantNames.length + 1;
-      status = call.participantNames.length == 1
-          ? 'On call with ${call.participantNames.first}'
-          : '$others on this call';
+      status = '${call.participantNames.length + 1} on this call · ${_fmtDuration(call.elapsed)}';
     }
 
-    return Material(
+    final content = Material(
       color: Colors.transparent,
       child: Container(
         width: double.infinity,
@@ -79,45 +132,69 @@ class _CallScreen extends StatelessWidget {
           ),
         ),
         child: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              const Spacer(flex: 2),
-              Container(
-                width: 140,
-                height: 140,
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white24),
-                alignment: Alignment.center,
-                child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 56, fontWeight: FontWeight.w600)),
-              ),
-              const SizedBox(height: 24),
-              Text(name,
-                  style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w600),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text(status, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center),
-              for (final notice in call.dropNotices)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(notice, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              if (!isIncoming)
+                Positioned(
+                  top: 4,
+                  left: 4,
+                  child: IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32),
+                    tooltip: 'Minimize',
+                    onPressed: call.minimize,
+                  ),
                 ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
-                child: const Text('This call is being recorded',
-                    style: TextStyle(color: Color(0xFFFF8A80), fontSize: 12)),
-              ),
-              const Spacer(flex: 3),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 32),
-                child: isIncoming
-                    ? _incomingActions(notify, call)
-                    : _activeActions(call),
+              Column(
+                children: [
+                  const Spacer(flex: 2),
+                  Container(
+                    width: 140,
+                    height: 140,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white24),
+                    alignment: Alignment.center,
+                    child: Text(initial,
+                        style: const TextStyle(color: Colors.white, fontSize: 56, fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(name,
+                      style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 8),
+                  Text(status, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center),
+                  for (final notice in call.dropNotices)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(notice, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                    ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
+                    child: const Text('This call is being recorded',
+                        style: TextStyle(color: Color(0xFFFF8A80), fontSize: 12)),
+                  ),
+                  const Spacer(flex: 3),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 32),
+                    child: isIncoming ? _incomingActions(notify, call) : _activeActions(call),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
+    );
+
+    if (isIncoming) return content;
+    // Matches WhatsApp: the hardware/gesture back action during a live call
+    // minimizes it rather than doing nothing or leaving the call outright.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) call.minimize();
+      },
+      child: content,
     );
   }
 
