@@ -37,6 +37,7 @@ class CallHistoryEntry {
   final DateTime? endedAt;
   final String status;
   final bool outgoing;
+  final String myStatus; // call_participants.status for me: invited/joined/declined/left
 
   CallHistoryEntry({
     required this.callId,
@@ -44,7 +45,13 @@ class CallHistoryEntry {
     required this.endedAt,
     required this.status,
     required this.outgoing,
+    required this.myStatus,
   });
+
+  /// An incoming call I never actually joined (timed out unanswered, or I
+  /// explicitly declined) -- WhatsApp/Telegram both surface either case the
+  /// same way in the call log.
+  bool get missed => !outgoing && myStatus != 'joined';
 
   factory CallHistoryEntry.fromJson(Map<String, dynamic> json) => CallHistoryEntry(
         callId: json['call_id'],
@@ -52,6 +59,7 @@ class CallHistoryEntry {
         endedAt: json['ended_at'] != null ? DateTime.parse(json['ended_at']).toLocal() : null,
         status: json['status'],
         outgoing: json['outgoing'] as bool,
+        myStatus: json['my_status'] ?? 'invited',
       );
 }
 

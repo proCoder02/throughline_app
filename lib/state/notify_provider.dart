@@ -43,6 +43,24 @@ class NotifyProvider extends ChangeNotifier {
         final id = event['call_id'];
         if (id != null) callProvider.handleRemoteDecline(id);
         break;
+      case 'call_ended':
+        // Sent when a call ends before this device ever joined it -- either
+        // the caller hung up first, or nobody answered before the ring
+        // timeout. Covers both roles on this device: if we're the callee
+        // still ringing, dismiss that (the incoming-call notification is
+        // `ongoing: true` and never expires on its own, and there's no live
+        // LiveKit connection yet to notice any other way); if we're the
+        // caller still waiting, end our own "Calling..." screen the exact
+        // same way an explicit decline already does.
+        final id = event['call_id'];
+        if (id != null) {
+          if (incomingCall?.callId == id) {
+            incomingCall = null;
+            notifyListeners();
+          }
+          callProvider.handleRemoteDecline(id);
+        }
+        break;
     }
   }
 

@@ -135,12 +135,17 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
               return ListTile(
                 tileColor: AppColors.panel,
                 leading: Icon(
-                  c.outgoing ? Icons.call_made : Icons.call_received,
-                  color: AppColors.accent,
+                  c.missed
+                      ? Icons.call_missed
+                      : (c.outgoing ? Icons.call_made : Icons.call_received),
+                  color: c.missed ? AppColors.danger : AppColors.accent,
                 ),
-                title: Text(c.outgoing ? 'Outgoing' : 'Incoming'),
+                title: Text(
+                  c.missed ? 'Missed call' : (c.outgoing ? 'Outgoing' : 'Incoming'),
+                  style: c.missed ? const TextStyle(color: AppColors.danger) : null,
+                ),
                 subtitle: Text(
-                  duration != null && duration.inSeconds > 0
+                  !c.missed && duration != null && duration.inSeconds > 0
                       ? '${formatCallTimestamp(c.createdAt)}  ·  ${_formatDuration(duration)}'
                       : formatCallTimestamp(c.createdAt),
                   style: const TextStyle(color: AppColors.textSoft),

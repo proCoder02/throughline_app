@@ -47,6 +47,31 @@ Future<Map<String, dynamic>?> consumePendingIncomingCall() async {
   }
 }
 
+/// Discards a pending incoming call without acting on it -- used when
+/// call_ended arrives before the app was ever opened to consume it, so a
+/// later cold start doesn't resurrect a call that's already over.
+Future<void> _clearPendingIncomingCall() async {
+  try {
+    await const FlutterSecureStorage().delete(key: _kPendingCallStorageKey);
+  } catch (_) {
+    // Best-effort -- worst case a stale entry lingers until overwritten by
+    // the next real incoming call.
+  }
+}
+
+/// Stable id matches _showIncomingCallNotification's `plugin.show(...)`
+/// call below, so this cancels exactly that notification.
+final _kIncomingCallNotificationId = 'incoming_call'.hashCode;
+
+Future<void> _cancelIncomingCallNotification() async {
+  try {
+    await FlutterLocalNotificationsPlugin().cancel(_kIncomingCallNotificationId);
+  } catch (_) {
+    // Best-effort -- worst case the notification lingers until manually
+    // dismissed, same as today's behavior for this whole event type.
+  }
+}
+
 Future<void> _showIncomingCallNotification(RemoteMessage message) async {
   final plugin = FlutterLocalNotificationsPlugin();
   await plugin.initialize(const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')));
@@ -83,12 +108,19 @@ Future<void> _showIncomingCallNotification(RemoteMessage message) async {
 /// top-level or static function annotated with vm:entry-point so it can run
 /// in its own isolate while the app is killed. incoming_call gets a custom
 /// full-screen-intent notification (see above); every other type is left to
-/// the OS's automatic display of the push's own `notification` payload.
+/// the OS's automatic display of the push's own `notification` payload --
+/// except call_ended, which is data-only (no visible notification of its
+/// own) and exists purely to cancel the incoming_call one: it's `ongoing:
+/// true` and never auto-expires, so without this a call the caller
+/// cancelled before this device answered would ring forever.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (message.data['type'] == 'incoming_call') {
     await _savePendingIncomingCall(message.data);
     await _showIncomingCallNotification(message);
+  } else if (message.data['type'] == 'call_ended') {
+    await _cancelIncomingCallNotification();
+    await _clearPendingIncomingCall();
   }
 }
 
@@ -188,10 +220,19 @@ class PushService {
     // same overlay the WS path drives) -- the other three types are
     // already covered by the live /ws/notify connection while the app is
     // in foreground, so acting on them here too would double-count badges.
+    // call_ended is the one exception worth a defensive cancel here too: if
+    // the incoming_call notification was shown just before the app came to
+    // foreground, the live WS path clears the in-app overlay but wouldn't
+    // otherwise touch that already-posted system notification.
     FirebaseMessaging.onMessage.listen((msg) {
       debugPrint('[push] foreground message received: type=${msg.data['type']} data=${msg.data} '
           'notif=${msg.notification?.title}/${msg.notification?.body}');
-      if (msg.data['type'] == 'incoming_call') onIncomingCallForeground?.call(msg.data);
+      if (msg.data['type'] == 'incoming_call') {
+        onIncomingCallForeground?.call(msg.data);
+      } else if (msg.data['type'] == 'call_ended') {
+        _cancelIncomingCallNotification();
+        _clearPendingIncomingCall();
+      }
     });
 
     // Tapped from background or a killed-state cold start -- the WS
