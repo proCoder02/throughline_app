@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../models/chat_message.dart';
 import '../../services/conversation_service.dart';
 import '../../theme.dart';
+import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/message_bubble.dart';
+import '../../widgets/offline_banner.dart';
 
 /// Persistent cross-session thread (§6): "what did I discuss with Rahul
 /// last week?" -- scoped to the whole account, not one conversation.
@@ -22,6 +24,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   List<ChatMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  bool _offline = false;
 
   @override
   void initState() {
@@ -44,10 +47,16 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       setState(() {
         _messages = messages;
         _loading = false;
+        _offline = false;
       });
       _scrollToEnd(animate: false);
     } catch (_) {
-      if (mounted && _loading) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _offline = true;
+        });
+      }
     }
   }
 
@@ -109,9 +118,10 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const MessageListSkeleton()
           : Column(
               children: [
+                if (_offline) const OfflineBanner(),
                 Expanded(
                   child: _messages.isEmpty
                       ? const Center(

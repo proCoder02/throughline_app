@@ -10,7 +10,17 @@
       "PowerShell(Start-Service -Name Redis)",
       "PowerShell(Get-Service -Name Redis)",
       "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\redis-windows\\\\redis-cli.exe\" ping)",
-      "PowerShell(Get-Process redis-server -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-Process redis-server -ErrorAction SilentlyContinue)",
+      "Read(//e//**)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-P3INW57-Desktop-throughline\\\\88a096eb-fac8-4ab4-bfc6-4acf4984ddac\\\\scratchpad\\\\apply_schema.py\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-P3INW57-Desktop-throughline\\\\88a096eb-fac8-4ab4-bfc6-4acf4984ddac\\\\scratchpad\\\\verify_schema.py\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" -m py_compile \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\app.py\"; echo \"compile exit: $LASTEXITCODE\")",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-P3INW57-Desktop-throughline\\\\88a096eb-fac8-4ab4-bfc6-4acf4984ddac\\\\scratchpad\\\\test_search_sql.py\")",
+      "PowerShell(Stop-Process -Id 16664 -Force)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 16664 -ErrorAction SilentlyContinue)",
+      "PowerShell(flutter pub upgrade livekit_client)",
+      "PowerShell(flutter devices)"
     ]
   }
 }

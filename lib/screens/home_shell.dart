@@ -23,13 +23,27 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  final _screens = const [
-    ChatsScreen(),
-    TasksScreen(),
-    ProfilesScreen(),
-    FriendsScreen(),
-    SettingsScreen(),
+  // Only the active tab's screen is actually built/initState'd -- an eager
+  // IndexedStack would fire all 5 screens' initState (and their network/cache
+  // calls) simultaneously the moment this widget mounts, right in the middle
+  // of app startup. Once a tab has been visited its widget is kept (matching
+  // IndexedStack's usual "preserve state across tab switches" behavior);
+  // never-visited tabs stay an empty placeholder.
+  final _visited = <int>{0};
+
+  static const _builders = <WidgetBuilder>[
+    _buildChats,
+    _buildTasks,
+    _buildProfiles,
+    _buildFriends,
+    _buildSettings,
   ];
+
+  static Widget _buildChats(BuildContext _) => const ChatsScreen();
+  static Widget _buildTasks(BuildContext _) => const TasksScreen();
+  static Widget _buildProfiles(BuildContext _) => const ProfilesScreen();
+  static Widget _buildFriends(BuildContext _) => const FriendsScreen();
+  static Widget _buildSettings(BuildContext _) => const SettingsScreen();
 
   @override
   void initState() {
@@ -76,11 +90,20 @@ class _HomeShellState extends State<HomeShell> {
     return Stack(
       children: [
         Scaffold(
-          body: IndexedStack(index: _index, children: _screens),
+          body: IndexedStack(
+            index: _index,
+            children: [
+              for (var i = 0; i < _builders.length; i++)
+                _visited.contains(i) ? _builders[i](context) : const SizedBox.shrink(),
+            ],
+          ),
           bottomNavigationBar: BottomNavigationBar(
             type: BottomNavigationBarType.fixed,
             currentIndex: _index,
-            onTap: (i) => setState(() => _index = i),
+            onTap: (i) => setState(() {
+              _index = i;
+              _visited.add(i);
+            }),
             items: [
               BottomNavigationBarItem(
                 icon: _badged(Icons.chat_bubble_outline, notify.unreadConversations.length),

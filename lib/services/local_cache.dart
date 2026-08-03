@@ -86,6 +86,20 @@ class LocalCache {
     }
   }
 
+  /// Whether persona onboarding has been completed -- lets PersonaGate skip
+  /// its own network round-trip on every single app open and go straight to
+  /// the home screen, re-verifying in the background instead of blocking on
+  /// it. Cleared on logout along with everything else in this box, so a
+  /// second account on the same device always gets a fresh check.
+  bool? getPersonaCompleted() {
+    final raw = _box.get('persona_completed');
+    return raw == null ? null : raw == 'true';
+  }
+
+  Future<void> setPersonaCompleted(bool completed) {
+    return _box.put('persona_completed', completed.toString());
+  }
+
   /// Wipes every cached chat/conversation -- called on logout so a second
   /// account signing in on the same device never sees the previous
   /// account's cached chats.

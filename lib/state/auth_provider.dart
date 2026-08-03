@@ -14,7 +14,15 @@ class AuthProvider extends ChangeNotifier {
   String? username;
   int? userId;
 
-  /// Validates any stored token on app launch.
+  /// Optimistic: a stored token is trusted immediately (no blocking network
+  /// call), so the app's first frame never waits on a round-trip -- if it
+  /// turns out to actually be invalid, the very next real API call's 401
+  /// routes back to the auth screen via ApiClient.onUnauthorized/forceLogout
+  /// anyway, same as any mid-session expiry. This also fixes a real bug the
+  /// old blocking version had: fetchMe() returning null (which happens both
+  /// for an invalid token AND for "device is offline right now") used to
+  /// force a logout in both cases -- being offline at launch should never
+  /// sign you out.
   Future<void> bootstrap() async {
     final token = await ApiClient.instance.readToken();
     if (token == null) {
@@ -22,16 +30,18 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final me = await _authService.fetchMe();
-    if (me != null) {
-      isAuthenticated = true;
-      username = me['username'];
-      userId = me['id'];
-    } else {
-      await ApiClient.instance.clearToken();
-    }
+    isAuthenticated = true;
     isLoading = false;
     notifyListeners();
+
+    // Refresh username/userId in the background -- best-effort, since the
+    // gate decision above has already been made.
+    final me = await _authService.fetchMe();
+    if (me != null) {
+      username = me['username'];
+      userId = me['id'];
+      notifyListeners();
+    }
   }
 
   Future<String?> login(String user, String password) async {

@@ -7,7 +7,9 @@ import '../../services/conversation_service.dart';
 import '../../state/listen_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/message_bubble.dart';
+import '../../widgets/offline_banner.dart';
 import '../../widgets/tag_chip.dart';
 
 class ChatThreadScreen extends StatefulWidget {
@@ -29,6 +31,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   List<ChatMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  bool _offline = false;
 
   @override
   void initState() {
@@ -61,13 +64,19 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
         _conversation = conversation;
         _messages = chat;
         _loading = false;
+        _offline = false;
       });
       _scrollToEnd(animate: false);
     } catch (_) {
       // Offline/unreachable -- keep showing whatever was loaded from cache
-      // above (or the loading spinner, if there was none) rather than
+      // above (or the loading skeleton, if there was none) rather than
       // crashing the screen.
-      if (mounted && _loading) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _offline = true;
+        });
+      }
     }
   }
 
@@ -168,7 +177,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     final isLive = _isLive(listen);
 
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: MessageListSkeleton());
     }
     final title = _conversation?.displayTitle ?? (isLive ? 'New conversation' : 'Untitled conversation');
     return Scaffold(
@@ -208,6 +217,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       ),
       body: Column(
         children: [
+          if (_offline) const OfflineBanner(),
           if (isLive && listen.seenIndices.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

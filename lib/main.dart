@@ -59,9 +59,11 @@ class ThroughlineApp extends StatelessWidget {
       home: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           if (auth.isLoading) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
+            // No spinner -- this gate now only lasts as long as a single
+            // secure-storage read (no network round-trip), so a blank
+            // screen matching the native splash's background reads as the
+            // splash continuing, not as the app "loading".
+            return const Scaffold(backgroundColor: AppColors.bgApp, body: SizedBox.shrink());
           }
           return auth.isAuthenticated ? const PersonaGate() : const AuthScreen();
         },
