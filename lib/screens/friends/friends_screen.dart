@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/friend.dart';
 import '../../services/friend_service.dart';
 import '../../state/call_provider.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
@@ -91,6 +92,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Friends'),
@@ -142,8 +144,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             )
           else
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text('Pick who to call, then confirm below.', style: TextStyle(color: AppColors.textSoft)),
@@ -163,13 +165,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   }
                   final friends = snap.data ?? [];
                   if (friends.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Text('No friends added yet', style: TextStyle(color: AppColors.textSoft)),
                     );
                   }
                   return ListView.separated(
                     itemCount: friends.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
+                    separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
                     itemBuilder: (context, i) {
                       final f = friends[i];
                       if (_pickingCall) {
@@ -249,7 +251,7 @@ class _FriendRow extends StatelessWidget {
                   children: [
                     Text(
                       friend.displayName,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
@@ -270,7 +272,7 @@ class _FriendRow extends StatelessWidget {
                               lastCallOutgoing: friend.lastCallOutgoing,
                               callCount: friend.callCount,
                             ),
-                            style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                            style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),

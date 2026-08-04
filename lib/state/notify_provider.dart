@@ -1,9 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../main.dart' show callProvider;
 import '../models/call.dart';
 import '../services/notify_socket.dart';
+import '../services/push_service.dart'
+    show dismissNativeRinging, markCallFinishedNative, showLocalNotification;
 import 'call_provider.dart' show CallStatus;
+
+/// A visible, dismissable heads-up for something that just happened while
+/// the app was open -- a new task/conversation appearing only as a silent
+/// badge increment is easy to miss entirely if you're not looking at that
+/// specific tab right now. Distinct from the badge counts themselves (which
+/// stay, so the tab still shows it's unread even after this notice is gone).
+class ForegroundNotice {
+  final String message;
+  final int? conversationId;
+  ForegroundNotice(this.message, {this.conversationId});
+}
 
 /// Badge state + call signaling fed by /ws/notify. Connect once app-wide
 /// while authenticated.
@@ -12,6 +27,7 @@ class NotifyProvider extends ChangeNotifier {
   final Set<int> unreadConversations = {};
   int taskBadge = 0;
   IncomingCall? incomingCall;
+  ForegroundNotice? foregroundNotice;
 
   // Call ids the native ConnectionService is already ringing for (see
   // PushService.onNativeRingStarted / MyFirebaseMessagingReceiver.kt) --
@@ -35,13 +51,25 @@ class NotifyProvider extends ChangeNotifier {
     switch (event['type']) {
       case 'task_created':
         taskBadge++;
+        // A real system notification, not the in-app SnackBar (see
+        // ForegroundNotice) -- FCM's own foreground-invisible behavior meant
+        // a new task while the app was open was too easy to miss entirely.
+        unawaited(showLocalNotification('New task', (event['description'] as String?) ?? 'untitled'));
         notifyListeners();
         break;
       case 'chat_message':
-      case 'call_conversation_ready':
         final id = event['conversation_id'];
         if (id != null) {
           unreadConversations.add(id);
+          notifyListeners();
+        }
+        break;
+      case 'call_conversation_ready':
+      case 'conversation_created':
+        final id = event['conversation_id'];
+        if (id != null) {
+          unreadConversations.add(id);
+          foregroundNotice = ForegroundNotice('New conversation ready', conversationId: id);
           notifyListeners();
         }
         break;
@@ -84,6 +112,17 @@ class NotifyProvider extends ChangeNotifier {
         final id = event['call_id'];
         if (id != null) {
           _nativelyRingingCallIds.remove(id);
+          // Covers this device having been foregrounded (native ring
+          // suppressed) when the call arrived -- native has no record of
+          // this call_id being over otherwise, and a later FCM redelivery
+          // of the original incoming_call push would ring it again.
+          unawaited(markCallFinishedNative(id));
+          // Covers the reverse: the native Telecom ringing screen is what's
+          // actually showing right now (call arrived while backgrounded) --
+          // clearing Dart's own incomingCall below does nothing for that
+          // screen, which otherwise keeps ringing/showing until manually
+          // declined even though the caller already hung up.
+          unawaited(dismissNativeRinging(id));
           if (incomingCall?.callId == id) {
             incomingCall = null;
             notifyListeners();
@@ -136,10 +175,18 @@ class NotifyProvider extends ChangeNotifier {
     }
   }
 
+  void clearForegroundNotice() {
+    if (foregroundNotice != null) {
+      foregroundNotice = null;
+      notifyListeners();
+    }
+  }
+
   void stop() {
     _socket.dispose();
     unreadConversations.clear();
     taskBadge = 0;
     incomingCall = null;
+    foregroundNotice = null;
   }
 }

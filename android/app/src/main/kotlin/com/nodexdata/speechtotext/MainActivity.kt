@@ -69,6 +69,35 @@ class MainActivity : FlutterActivity() {
                     result.success(pendingCallAnswer)
                     pendingCallAnswer = null
                 }
+                "markCallFinished" -> {
+                    val callId = call.argument<String>("call_id")
+                    Log.d(TAG, "markCallFinished: callId=$callId")
+                    if (callId != null) NativeAuthStore.markCallFinished(applicationContext, callId)
+                    result.success(null)
+                }
+                "showLocalNotification" -> {
+                    val title = call.argument<String>("title") ?: ""
+                    val body = call.argument<String>("body") ?: ""
+                    SimpleNotificationHelper.show(applicationContext, title, body)
+                    result.success(null)
+                }
+                "dismissNativeRinging" -> {
+                    // The WS/FCM call_ended event reaching Dart's NotifyProvider
+                    // only ever cleared Dart-side incomingCall state -- if the
+                    // native Telecom ringing screen (CallConnection/
+                    // IncomingCallActivity) is what's actually showing (call
+                    // arrived while backgrounded, then the app was foregrounded
+                    // before the caller hung up), nothing told IT to dismiss,
+                    // so it kept ringing/showing until the user manually
+                    // declined. This is the bridge for that.
+                    val callId = call.argument<String>("call_id")
+                    Log.d(TAG, "dismissNativeRinging: callId=$callId, " +
+                        "activeConnection=${CallConnectionService.activeConnections.containsKey(callId)}")
+                    if (callId != null) {
+                        CallConnectionService.activeConnections[callId]?.endFromRemote()
+                    }
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

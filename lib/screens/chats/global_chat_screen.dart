@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/chat_message.dart';
 import '../../services/conversation_service.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/message_bubble.dart';
@@ -104,14 +106,15 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       backgroundColor: AppColors.chatBg,
       appBar: AppBar(
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Ask about your people & conversations'),
+            const Text('Ask about your people & conversations'),
             Text('Ask across everything you\'ve recorded',
                 style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
           ],
@@ -124,9 +127,9 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                 if (_offline) const OfflineBanner(),
                 Expanded(
                   child: _messages.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Padding(
-                            padding: EdgeInsets.all(24),
+                            padding: const EdgeInsets.all(24),
                             child: Text(
                               "Ask about a person or a past topic -- I'll pull in whichever conversations are relevant.",
                               textAlign: TextAlign.center,

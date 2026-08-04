@@ -18,7 +18,7 @@ class ChatListSkeleton extends StatelessWidget {
       highlightColor: AppColors.panel,
       child: ListView.separated(
         itemCount: rowCount,
-        separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
+        separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
         itemBuilder: (_, __) => Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(

@@ -65,7 +65,22 @@
       "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
       "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell monkey -p com.nodexdata.speechtotext -c android.intent.category.LAUNCHER 1)",
       "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell am force-stop com.nodexdata.speechtotext)",
-      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell pidof com.nodexdata.speechtotext)"
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s 192.168.0.100:43029 shell pidof com.nodexdata.speechtotext)",
+      "PowerShell(\\(Get-Content C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\app.py | Measure-Object -Line\\).Lines)",
+      "PowerShell(Get-Content C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\.env | ForEach-Object { \\($_ -split '='\\)[0] })",
+      "WebSearch",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId=6824 OR ProcessId=19240\")",
+      "PowerShell(Get-Process -Id 6824,19240)",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s \"adb-9d119f1c-jUllZN._adb-tls-connect._tcp\" install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
+      "PowerShell(adb devices)",
+      "PowerShell(adb -s \"adb-9d119f1c-jUllZN._adb-tls-connect._tcp\" install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; .\\\\.venv\\\\Scripts\\\\python.exe -m py_compile app.py; echo \"py_compile exit: $LASTEXITCODE\")",
+      "PowerShell(adb devices -l)",
+      "PowerShell(adb -s \"adb-9d119f1c-jUllZN \\(2\\)._adb-tls-connect._tcp\" install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
+      "PowerShell(adb -s \"adb-9d119f1c-jUllZN \\(2\\)._adb-tls-connect._tcp\" install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\" 2>&1)",
+      "PowerShell(adb kill-server)",
+      "PowerShell(adb start-server)",
+      "PowerShell(adb install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\P3INW57"

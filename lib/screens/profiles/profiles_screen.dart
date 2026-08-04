@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/profile.dart';
 import '../../services/profile_service.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import 'profile_detail_screen.dart';
@@ -34,6 +36,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profiles'),
@@ -71,13 +74,13 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
               return Center(
                 child: Text(
                   _search.isNotEmpty ? 'No profiles match your search' : 'No profiles yet',
-                  style: const TextStyle(color: AppColors.textSoft),
+                  style: TextStyle(color: AppColors.textSoft),
                 ),
               );
             }
             return ListView.separated(
               itemCount: profiles.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
+              separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
               itemBuilder: (context, i) {
                 final p = profiles[i];
                 return _ProfileRow(
@@ -127,19 +130,19 @@ class _ProfileRow extends StatelessWidget {
                   children: [
                     Text(
                       profile.name,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                      style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: AppColors.textSoft),
+              Icon(Icons.chevron_right, color: AppColors.textSoft),
             ],
           ),
         ),

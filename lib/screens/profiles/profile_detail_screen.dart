@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/profile.dart';
 import '../../services/profile_service.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../chats/chat_thread_screen.dart';
 
@@ -84,6 +86,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(
         title: Text(_profile.name),
@@ -93,10 +96,10 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         ],
       ),
       body: _profile.notes.isEmpty
-          ? const Center(child: Text('No observations yet', style: TextStyle(color: AppColors.textSoft)))
+          ? Center(child: Text('No observations yet', style: TextStyle(color: AppColors.textSoft)))
           : ListView.separated(
               itemCount: _profile.notes.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
+              separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
               itemBuilder: (context, i) {
                 final n = _profile.notes[i];
                 final category = n.category.isEmpty ? '' : n.category[0].toUpperCase() + n.category.substring(1);
@@ -108,11 +111,11 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                       Expanded(
                         child: RichText(
                           text: TextSpan(
-                            style: const TextStyle(fontSize: 14.5, color: AppColors.text, height: 1.4),
+                            style: TextStyle(fontSize: 14.5, color: AppColors.text, height: 1.4),
                             children: [
                               TextSpan(
                                 text: '$category  ·  ${DateFormat('MMM d, HH:mm').format(n.createdAt)}\n',
-                                style: const TextStyle(color: AppColors.textSoft, fontSize: 12.5),
+                                style: TextStyle(color: AppColors.textSoft, fontSize: 12.5),
                               ),
                               TextSpan(text: n.observation),
                             ],
@@ -121,7 +124,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                       ),
                       if (n.conversationId != null)
                         IconButton(
-                          icon: const Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.textSoft),
+                          icon: Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.textSoft),
                           tooltip: 'View source conversation',
                           onPressed: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: n.conversationId!)),

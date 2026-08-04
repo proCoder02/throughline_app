@@ -58,7 +58,7 @@ class _PersonaGateState extends State<PersonaGate> {
       // Same reasoning as main.dart's auth gate -- a blank splash-colored
       // screen instead of a spinner, since this only shows for a genuinely
       // first-ever login where nothing is cached yet.
-      return const Scaffold(backgroundColor: AppColors.bgApp, body: SizedBox.shrink());
+      return Scaffold(backgroundColor: AppColors.bgApp, body: const SizedBox.shrink());
     }
     if (!_completed!) {
       return PersonaOnboardingScreen(

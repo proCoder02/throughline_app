@@ -37,8 +37,17 @@ class ListenProvider extends ChangeNotifier {
   final List<int> seenIndices = [];
   int? pendingSpeakerIndex;
   List<Speaker> knownSpeakers = [];
-  final List<String> tags = [];
-  final Map<String, Timer> _tagTimers = {};
+
+  // Two distinct things extracted per background-analysis batch: short
+  // topic keywords (always extracted) and tappable follow-up questions
+  // (only when one's actually raised/implied) -- previously conflated into
+  // one "tags" field where questions crowded out topics almost entirely,
+  // since the backend prompt preferred a question whenever one was
+  // available. See build_analysis_prompt in app.py.
+  final List<String> topics = [];
+  final List<String> questions = [];
+  final Map<String, Timer> _topicTimers = {};
+  final Map<String, Timer> _questionTimers = {};
   final List<TranscriptLine> lines = [];
 
   void Function(int conversationId)? _onSessionStarted;
@@ -64,11 +73,16 @@ class ListenProvider extends ChangeNotifier {
     lines.clear();
     speakerNames.clear();
     seenIndices.clear();
-    tags.clear();
-    for (final timer in _tagTimers.values) {
+    topics.clear();
+    questions.clear();
+    for (final timer in _topicTimers.values) {
       timer.cancel();
     }
-    _tagTimers.clear();
+    _topicTimers.clear();
+    for (final timer in _questionTimers.values) {
+      timer.cancel();
+    }
+    _questionTimers.clear();
     pendingSpeakerIndex = null;
 
     _socket.connect(
@@ -115,8 +129,10 @@ class ListenProvider extends ChangeNotifier {
         final tasksFound = msg['tasks_found'] ?? 0;
         final speakersFound = msg['speakers_found'] ?? 0;
         status = 'Auto-extracted $tasksFound task(s), notes on $speakersFound speaker(s).';
-        final newTags = (msg['tags'] as List?)?.cast<String>() ?? const [];
-        if (newTags.isNotEmpty) _addTags(newTags);
+        final newTopics = (msg['topics'] as List?)?.cast<String>() ?? const [];
+        final newQuestions = (msg['questions'] as List?)?.cast<String>() ?? const [];
+        if (newTopics.isNotEmpty) _addChips(topics, _topicTimers, newTopics);
+        if (newQuestions.isNotEmpty) _addChips(questions, _questionTimers, newQuestions);
         notifyListeners();
         break;
       case 'error':
@@ -151,31 +167,36 @@ class ListenProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Caps the accumulated (deduped) set at 5 and schedules each new tag to
+  /// Caps the accumulated (deduped) set at 5 and schedules each new chip to
   /// auto-expire 20s after it appears, even if never tapped/dismissed.
-  void _addTags(List<String> newTags) {
-    final existing = tags.map((t) => t.toLowerCase()).toSet();
-    for (final t in newTags) {
+  /// Shared by both topics and questions -- same accumulate/cap/expire
+  /// behavior, just against whichever list+timer-map is passed in.
+  void _addChips(List<String> list, Map<String, Timer> timers, List<String> newItems) {
+    final existing = list.map((t) => t.toLowerCase()).toSet();
+    for (final t in newItems) {
       if (existing.contains(t.toLowerCase())) continue;
       existing.add(t.toLowerCase());
-      tags.add(t);
-      _tagTimers[t] = Timer(const Duration(seconds: 20), () => removeTag(t));
+      list.add(t);
+      timers[t] = Timer(const Duration(seconds: 20), () => _removeChip(list, timers, t));
     }
-    if (tags.length > 5) {
-      final evicted = tags.sublist(0, tags.length - 5);
-      tags.removeRange(0, tags.length - 5);
+    if (list.length > 5) {
+      final evicted = list.sublist(0, list.length - 5);
+      list.removeRange(0, list.length - 5);
       for (final t in evicted) {
-        _tagTimers.remove(t)?.cancel();
+        timers.remove(t)?.cancel();
       }
     }
   }
 
-  void removeTag(String tag) {
-    if (tags.remove(tag)) {
-      _tagTimers.remove(tag)?.cancel();
+  void _removeChip(List<String> list, Map<String, Timer> timers, String item) {
+    if (list.remove(item)) {
+      timers.remove(item)?.cancel();
       notifyListeners();
     }
   }
+
+  void removeTopic(String t) => _removeChip(topics, _topicTimers, t);
+  void removeQuestion(String q) => _removeChip(questions, _questionTimers, q);
 
   Future<void> stop() async {
     if (!isListening || _stopping) return;
@@ -192,10 +213,14 @@ class ListenProvider extends ChangeNotifier {
     // below only ever runs once.
     if (_done) return;
     _done = true;
-    for (final timer in _tagTimers.values) {
+    for (final timer in _topicTimers.values) {
       timer.cancel();
     }
-    _tagTimers.clear();
+    _topicTimers.clear();
+    for (final timer in _questionTimers.values) {
+      timer.cancel();
+    }
+    _questionTimers.clear();
     isListening = false;
     _stopping = false;
     status = 'Stopped. Saved automatically.';

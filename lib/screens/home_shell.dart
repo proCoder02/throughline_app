@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../main.dart' show notifyProvider, callProvider;
+import '../main.dart' show notifyProvider, callProvider, navigatorKey;
 import '../services/api_client.dart';
 import '../services/push_service.dart';
 import '../state/notify_provider.dart';
+import '../state/theme_provider.dart';
 import '../widgets/call_overlay.dart';
+import 'chats/chat_thread_screen.dart';
 import 'chats/chats_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'profiles/profiles_screen.dart';
@@ -93,13 +95,39 @@ class _HomeShellState extends State<HomeShell> {
     // way regardless of which channel got there first.
     PushService.instance.onIncomingCallForeground = notifyProvider.handleIncomingCallPush;
     PushService.instance.onMessageTapped = (data) {
-      if (data['type'] == 'incoming_call') notifyProvider.handleIncomingCallPush(data);
-      // task_created / reminder_email_sent / friend_mood_update: landing on
-      // HomeShell is enough for now -- the relevant tab's badge already
-      // reflects it once the WS reconnects. Deep-linking a tap straight to
-      // the task/conversation/friend is a reasonable follow-up, not done here.
+      switch (data['type']) {
+        case 'incoming_call':
+          notifyProvider.handleIncomingCallPush(data);
+          break;
+        case 'task_created':
+        case 'call_conversation_ready':
+        case 'conversation_created':
+          // All three carry conversation_id -- there's no dedicated task
+          // detail screen (see task_service.dart/tasks_screen.dart), so a
+          // tapped task notification opens its source conversation, same as
+          // the existing "view source conversation" icon already does on
+          // the Tasks tab.
+          _openConversationFromPush(data);
+        // reminder_email_sent / friend_mood_update: landing on HomeShell is
+        // enough for now -- the relevant tab's badge already reflects it
+        // once the WS reconnects.
+      }
     };
     unawaited(PushService.instance.registerDevice());
+  }
+
+  void _openConversationFromPush(Map<String, dynamic> data) {
+    final conversationId = int.tryParse(data['conversation_id']?.toString() ?? '');
+    if (conversationId == null) return;
+    notifyProvider.clearConversation(conversationId);
+    // Posted after the frame so this can't race HomeShell's own first
+    // build/route (e.g. a cold start where this fires before the
+    // Navigator under navigatorKey has attached its first route yet).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: conversationId)),
+      );
+    });
   }
 
   void _joinNativelyAnsweredCall(Map<String, dynamic> data) {
@@ -125,6 +153,41 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final notify = context.watch<NotifyProvider>();
+    // Establishes a real Provider dependency so this (and everything it
+    // builds fresh below, including every IndexedStack tab) reliably
+    // rebuilds the instant dark/light mode changes -- a plain global flag
+    // read with no listener attached doesn't reliably propagate through
+    // Flutter's Navigator/Overlay machinery on its own (a known gotcha:
+    // already-pushed routes especially don't reliably repaint just because
+    // an ancestor happened to rebuild), which is what made toggling the
+    // setting feel glitchy/inconsistent before this.
+    context.watch<ThemeProvider>();
+
+    // A new task/conversation while the app is open previously only ever
+    // showed up as a silent badge increment -- easy to miss entirely if
+    // you're not already looking at that tab. This is the visible
+    // heads-up, sourced from the live WS channel (already the reliable one
+    // while foregrounded) rather than duplicating it via the FCM foreground
+    // listener too. Scheduled after this frame, not shown directly here,
+    // since triggering a SnackBar mid-build isn't safe.
+    final notice = notify.foregroundNotice;
+    if (notice != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyProvider.clearForegroundNotice();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(notice.message),
+            action: notice.conversationId != null
+                ? SnackBarAction(
+                    label: 'View',
+                    onPressed: () => _openConversationFromPush({'conversation_id': notice.conversationId}),
+                  )
+                : null,
+          ),
+        );
+      });
+    }
+
     return Stack(
       children: [
         Scaffold(
@@ -141,6 +204,13 @@ class _HomeShellState extends State<HomeShell> {
             onTap: (i) => setState(() {
               _index = i;
               _visited.add(i);
+              // TasksScreen only ever runs its own initState() (which
+              // clears this) the first time the tab is visited -- the
+              // IndexedStack above deliberately keeps it alive afterward
+              // (see the comment on _visited), so a badge from a task
+              // created after that first visit never cleared on later
+              // visits without this.
+              if (i == 1) notifyProvider.clearTaskBadge();
             }),
             items: [
               BottomNavigationBarItem(

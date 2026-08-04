@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/call.dart';
@@ -27,15 +28,32 @@ class CallOverlay extends StatelessWidget {
     final call = context.watch<CallProvider>();
 
     final showIncoming = call.status == CallStatus.idle ? notify.incomingCall : null;
+    Widget child;
+    String key;
     if (showIncoming != null) {
       Ringtone.start();
-      return _CallScreen(incoming: showIncoming);
+      child = _CallScreen(incoming: showIncoming);
+      key = 'incoming';
+    } else {
+      Ringtone.stop();
+      if (call.status == CallStatus.idle) {
+        child = const SizedBox.shrink();
+        key = 'idle';
+      } else if (call.isMinimized) {
+        child = const _MinimizedCallPill();
+        key = 'minimized';
+      } else {
+        child = const _CallScreen();
+        key = 'active';
+      }
     }
-    Ringtone.stop();
-
-    if (call.status == CallStatus.idle) return const SizedBox.shrink();
-    if (call.isMinimized) return const _MinimizedCallPill();
-    return const _CallScreen();
+    // Cross-fades between ringing/active/minimized/hidden instead of the
+    // hard cut a plain conditional return gives -- especially noticeable on
+    // the minimize/maximize transition, which used to just pop instantly.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      child: KeyedSubtree(key: ValueKey(key), child: child),
+    );
   }
 }
 
@@ -63,7 +81,10 @@ class _MinimizedCallPill extends StatelessWidget {
             elevation: 4,
             child: InkWell(
               borderRadius: BorderRadius.circular(24),
-              onTap: call.maximize,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                call.maximize();
+              },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Row(
@@ -141,7 +162,10 @@ class _CallScreen extends StatelessWidget {
                   child: IconButton(
                     icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32),
                     tooltip: 'Minimize',
-                    onPressed: call.minimize,
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      call.minimize();
+                    },
                   ),
                 ),
               Column(
@@ -264,7 +288,10 @@ class _CallButton extends StatelessWidget {
           elevation: 4,
           child: InkWell(
             customBorder: const CircleBorder(),
-            onTap: onPressed,
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              onPressed();
+            },
             child: SizedBox(width: 72, height: 72, child: Icon(icon, color: Colors.white, size: 32)),
           ),
         ),

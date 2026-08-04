@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -12,10 +13,14 @@ import '../../models/search_result.dart';
 import '../../services/conversation_service.dart';
 import '../../state/listen_provider.dart';
 import '../../state/notify_provider.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/category_chip_bar.dart';
 import '../../widgets/chat_list_skeleton.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/fade_slide_in.dart';
+import '../../widgets/mood_trend_card.dart';
 import '../../widgets/offline_banner.dart';
 import 'chat_thread_screen.dart';
 import 'global_chat_screen.dart';
@@ -129,6 +134,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       ),
     );
     if (confirmed != true) return;
+    HapticFeedback.mediumImpact();
     try {
       await _service.delete(c.id);
       if (!mounted) return;
@@ -168,6 +174,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
   Widget build(BuildContext context) {
     final notify = context.watch<NotifyProvider>();
     final listen = context.watch<ListenProvider>();
+    // See home_shell.dart's identical line for why this is needed --
+    // without it this screen doesn't reliably repaint on a theme change.
+    context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chats'),
@@ -218,6 +227,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       body: Column(
         children: [
           if (_offline) const OfflineBanner(),
+          if (_search.isEmpty) const MoodTrendCard(),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _reload,
@@ -241,11 +251,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (_search.isNotEmpty && _searchResults != null) {
       final results = _searchResults!;
       if (results.isEmpty) {
-        return const Center(child: Text('No matches found', style: TextStyle(color: AppColors.textSoft)));
+        return const EmptyState(icon: Icons.search_off, title: 'No matches found');
       }
       return ListView.separated(
         itemCount: results.length,
-        separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
+        separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
         itemBuilder: (context, i) {
           final r = results[i];
           return _SearchResultRow(
@@ -265,41 +275,46 @@ class _ChatsScreenState extends State<ChatsScreen> {
       items = items.where((c) => c.displayTitle.toLowerCase().contains(_search)).toList();
     }
     if (items.isEmpty) {
-      return Center(
-        child: Text(
-          _search.isNotEmpty ? 'No matches found' : 'No conversations yet',
-          style: const TextStyle(color: AppColors.textSoft),
-        ),
-      );
+      return _search.isNotEmpty
+          ? const EmptyState(icon: Icons.search_off, title: 'No matches found')
+          : const EmptyState(
+              icon: Icons.chat_bubble_outline,
+              title: 'No conversations yet',
+              subtitle: 'Start a live listen session or make a call to get started.',
+            );
     }
     return ListView.separated(
       itemCount: items.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border, indent: 78),
+      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
       itemBuilder: (context, i) {
         final c = items[i];
         final unread = notify.unreadConversations.contains(c.id);
-        return Slidable(
-          key: ValueKey(c.id),
-          endActionPane: ActionPane(
-            motion: const DrawerMotion(),
-            extentRatio: 0.25,
-            children: [
-              SlidableAction(
-                onPressed: (_) => _confirmDelete(c),
-                backgroundColor: AppColors.danger,
-                foregroundColor: Colors.white,
-                icon: Icons.delete_outline,
-                label: 'Delete',
-              ),
-            ],
-          ),
-          child: _ChatRow(
-            conversation: c,
-            unread: unread,
-            onTap: () {
-              notifyProvider.clearConversation(c.id);
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
-            },
+        return FadeSlideIn(
+          key: ValueKey('fade_${c.id}'),
+          index: i,
+          child: Slidable(
+            key: ValueKey(c.id),
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              extentRatio: 0.25,
+              children: [
+                SlidableAction(
+                  onPressed: (_) => _confirmDelete(c),
+                  backgroundColor: AppColors.danger,
+                  foregroundColor: Colors.white,
+                  icon: Icons.delete_outline,
+                  label: 'Delete',
+                ),
+              ],
+            ),
+            child: _ChatRow(
+              conversation: c,
+              unread: unread,
+              onTap: () {
+                notifyProvider.clearConversation(c.id);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
+              },
+            ),
           ),
         );
       },
@@ -368,7 +383,7 @@ class _ChatRow extends StatelessWidget {
                         Expanded(
                           child: Text(
                             categoryLabel,
-                            style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                            style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -423,21 +438,21 @@ class _SearchResultRow extends StatelessWidget {
                         Expanded(
                           child: Text(
                             result.displayTitle,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           DateFormat('MMM d, HH:mm').format(result.createdAt),
-                          style: const TextStyle(fontSize: 12, color: AppColors.textSoft),
+                          style: TextStyle(fontSize: 12, color: AppColors.textSoft),
                         ),
                       ],
                     ),
                     const SizedBox(height: 3),
                     Text.rich(
                       TextSpan(
-                        style: const TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                        style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
                         children: _parseSnippetSpans(result.snippet),
                       ),
                       maxLines: 2,
@@ -464,7 +479,7 @@ List<TextSpan> _parseSnippetSpans(String snippet) {
   var last = 0;
   for (final match in _snippetBoldTag.allMatches(snippet)) {
     if (match.start > last) spans.add(TextSpan(text: snippet.substring(last, match.start)));
-    spans.add(TextSpan(text: match.group(1), style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.text)));
+    spans.add(TextSpan(text: match.group(1), style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.text)));
     last = match.end;
   }
   if (last < snippet.length) spans.add(TextSpan(text: snippet.substring(last)));

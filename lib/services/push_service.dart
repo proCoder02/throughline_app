@@ -244,3 +244,54 @@ Future<Map<String, dynamic>?> consumePendingCallAnswer() async {
     return null;
   }
 }
+
+/// Tells the native side a call_id is fully resolved (declined/answered/
+/// ended) even when that resolution happened entirely on the Dart side --
+/// e.g. the app was foregrounded when the call arrived, so
+/// MyFirebaseMessagingReceiver.kt never intercepted it and NativeAuthStore's
+/// "finished calls" guard (see CallConnection.kt) never got marked from
+/// there. Without this, a call resolved in-app while foregrounded, followed
+/// by the app losing foreground before FCM's at-least-once delivery
+/// redelivers the same incoming_call push, rings again natively for a call
+/// that's long over. Call from every place a call_id gets resolved in Dart:
+/// CallProvider.declineCall/joinCall and NotifyProvider's call_ended
+/// handler.
+Future<void> markCallFinishedNative(int callId) async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _kCallChannel.invokeMethod('markCallFinished', {'call_id': callId.toString()});
+  } catch (_) {
+    // Best-effort -- worst case a stale FCM redelivery rings once more.
+  }
+}
+
+/// Dismisses the native Telecom ringing screen for a call_id if one is
+/// currently showing. NotifyProvider's WS 'call_ended' handling only ever
+/// cleared its own Dart-side incomingCall state, which is a no-op if what's
+/// actually on screen is the native ConnectionService ringing UI (the call
+/// arrived while backgrounded, so MyFirebaseMessagingReceiver.kt intercepted
+/// it and rang natively) -- that screen has no idea the call just ended
+/// unless told directly. Safe to call even when nothing is ringing
+/// natively (no-ops if there's no active connection for this call_id).
+Future<void> dismissNativeRinging(int callId) async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _kCallChannel.invokeMethod('dismissNativeRinging', {'call_id': callId.toString()});
+  } catch (_) {
+    // Best-effort.
+  }
+}
+
+/// Posts a real system notification, even while the app is foregrounded --
+/// FCM's own `notification` block never auto-displays in that state (that's
+/// standard OS behavior, not something toggled server-side), so a
+/// foreground-only in-app SnackBar was the only heads-up a new task ever
+/// got. This is the actual visible banner instead.
+Future<void> showLocalNotification(String title, String body) async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _kCallChannel.invokeMethod('showLocalNotification', {'title': title, 'body': body});
+  } catch (_) {
+    // Best-effort -- worst case this falls back to no visible heads-up at all.
+  }
+}

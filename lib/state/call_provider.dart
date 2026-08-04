@@ -9,6 +9,7 @@ import 'package:record/record.dart';
 import '../main.dart' show authProvider;
 import '../models/call.dart';
 import '../services/call_service.dart';
+import '../services/push_service.dart' show markCallFinishedNative;
 
 enum CallStatus { idle, connecting, active }
 
@@ -45,6 +46,16 @@ class CallProvider extends ChangeNotifier {
   lk.EventsListener<lk.RoomEvent>? _listener;
   String? _recordingPath;
 
+  // Recording only ever makes sense once there's an actual second person in
+  // the room -- the caller connects to LiveKit the instant they place the
+  // call, well before the callee answers, so starting the recorder
+  // unconditionally at that point captured nothing but ringback/silence for
+  // every declined/missed call. That got uploaded and transcribed anyway,
+  // producing a garbage conversation (and a "conversation ready" push) for
+  // calls nobody actually had. Gating on this flag instead means a call that
+  // never connects two people never records or uploads anything at all.
+  bool _remoteEverJoined = false;
+
   // Which participant is the initiator matters for group-call hangup rules
   // (see the ParticipantDisconnectedEvent handler below): identity strings
   // on LiveKit are the backend's str(user_id) (generate_livekit_token in
@@ -69,6 +80,10 @@ class CallProvider extends ChangeNotifier {
     _initiatorIdentity = callerId.toString();
     status = CallStatus.connecting;
     notifyListeners();
+    // Same reasoning as declineCall(): answered in-app (foregrounded ringing
+    // screen) means native never saw this call_id at all, so it needs
+    // telling directly too.
+    unawaited(markCallFinishedNative(callId));
     try {
       final info = await _service.join(callId);
       await _connect(info);
@@ -85,6 +100,12 @@ class CallProvider extends ChangeNotifier {
 
   Future<void> declineCall(int callId) {
     debugPrint('[call] declineCall($callId)');
+    // Resolved entirely in Dart (e.g. app was foregrounded when this call
+    // arrived, so the native receiver never intercepted it) -- tell native
+    // too, otherwise a later FCM redelivery of this same incoming_call push
+    // finds no record of it being over and rings it again. See
+    // markCallFinishedNative's doc comment.
+    unawaited(markCallFinishedNative(callId));
     return _service.decline(callId);
   }
 
@@ -117,7 +138,13 @@ class CallProvider extends ChangeNotifier {
     final room = lk.Room();
     final listener = room.createListener();
     listener
-      ..on<lk.ParticipantConnectedEvent>((_) => _refreshRoster())
+      ..on<lk.ParticipantConnectedEvent>((_) {
+        _refreshRoster();
+        if (!_remoteEverJoined) {
+          _remoteEverJoined = true;
+          unawaited(_startLocalRecording());
+        }
+      })
       ..on<lk.ParticipantDisconnectedEvent>((e) {
         _addDropNotice(e.participant.name.isNotEmpty ? e.participant.name : e.participant.identity);
         _refreshRoster();
@@ -148,7 +175,13 @@ class CallProvider extends ChangeNotifier {
     _refreshRoster();
     notifyListeners();
 
-    unawaited(_startLocalRecording());
+    // Covers the callee's side: by the time they answer, the caller is
+    // typically already in the room, so ParticipantConnectedEvent above
+    // won't fire again for them -- check directly here too.
+    if (!_remoteEverJoined && room.remoteParticipants.isNotEmpty) {
+      _remoteEverJoined = true;
+      unawaited(_startLocalRecording());
+    }
   }
 
   void _refreshRoster() {
@@ -202,9 +235,11 @@ class CallProvider extends ChangeNotifier {
     await listener?.dispose();
 
     try {
-      final path = await _recorder.stop();
-      if (id != null && path != null) {
-        await _service.uploadRecording(id, File(path));
+      if (_recordingPath != null) {
+        final path = await _recorder.stop();
+        if (id != null && path != null) {
+          await _service.uploadRecording(id, File(path));
+        }
       }
     } catch (_) {
       // Best-effort, matches the web client swallowing upload errors.
@@ -222,6 +257,8 @@ class CallProvider extends ChangeNotifier {
     participantNames = [];
     dropNotices.clear();
     _initiatorIdentity = null;
+    _remoteEverJoined = false;
+    _recordingPath = null;
     notifyListeners();
   }
 }

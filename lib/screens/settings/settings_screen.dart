@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../main.dart' show themeProvider;
 import '../../models/category.dart';
 import '../../services/category_service.dart';
 import '../../services/settings_service.dart';
 import '../../state/auth_provider.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
@@ -95,6 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    context.watch<ThemeProvider>();
     final categoryNames = _categories?.all ?? kCategories;
     return Scaffold(
       backgroundColor: AppColors.bgApp,
@@ -115,11 +118,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(auth.username ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                              const Text('Signed in', style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
+                              Text('Signed in', style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
                             ],
                           ),
                         ),
                       ],
+                    ),
+                  ],
+                ),
+                _SettingsCard(
+                  title: 'Appearance',
+                  children: [
+                    Consumer<ThemeProvider>(
+                      builder: (context, themeState, __) => SegmentedButton<ThemeMode>(
+                        segments: const [
+                          ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.brightness_auto)),
+                          ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
+                          ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
+                        ],
+                        selected: {themeProvider.mode},
+                        onSelectionChanged: (selection) => themeProvider.setMode(selection.first),
+                      ),
                     ),
                   ],
                 ),
@@ -195,7 +214,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 style: const TextStyle(fontFamily: 'monospace', fontSize: 20, fontWeight: FontWeight.w600),
                               ),
                             ),
-                            const Icon(Icons.copy_outlined, size: 20, color: AppColors.textSoft),
+                            Icon(Icons.copy_outlined, size: 20, color: AppColors.textSoft),
                           ],
                         ),
                       ),
@@ -248,12 +267,12 @@ class _SettingsCard extends StatelessWidget {
               if (title != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(title!, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  child: Text(title!, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
                 ),
               if (subtitle != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(subtitle!, style: const TextStyle(fontSize: 13, color: AppColors.textSoft)),
+                  child: Text(subtitle!, style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
                 ),
               ...children,
             ],

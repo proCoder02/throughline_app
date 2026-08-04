@@ -58,6 +58,7 @@ class MyFirebaseMessagingReceiver : FlutterFirebaseMessagingReceiver() {
                         Log.d(TAG, "onReceive: call_ended for callId=$callId, " +
                             "activeConnection=${CallConnectionService.activeConnections.containsKey(callId)}")
                         if (callId != null) {
+                            NativeAuthStore.markCallFinished(context, callId)
                             CallConnectionService.activeConnections[callId]?.endFromRemote()
                         }
                         // Still fall through to super.onReceive below -- if this
@@ -112,6 +113,14 @@ class MyFirebaseMessagingReceiver : FlutterFirebaseMessagingReceiver() {
         val callId = remoteMessage.data["call_id"]
         if (callId == null) {
             Log.w(TAG, "handleIncomingCall: no call_id in payload, dropping")
+            return
+        }
+        if (NativeAuthStore.isCallFinished(context, callId)) {
+            Log.d(TAG, "handleIncomingCall: callId=$callId already finished, ignoring redelivered push")
+            return
+        }
+        if (CallConnectionService.activeConnections.containsKey(callId)) {
+            Log.d(TAG, "handleIncomingCall: callId=$callId already ringing, ignoring duplicate push")
             return
         }
         try {

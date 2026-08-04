@@ -23,6 +23,8 @@ object NativeAuthStore {
     private const val PREFS_NAME = "native_auth_store"
     private const val KEY_TOKEN = "token"
     private const val KEY_BASE_URL = "base_url"
+    private const val KEY_FINISHED_CALLS = "finished_calls"
+    private const val MAX_FINISHED_CALLS = 30
 
     private fun prefs(context: Context) = EncryptedSharedPreferences.create(
         context.applicationContext,
@@ -38,6 +40,36 @@ object NativeAuthStore {
 
     fun clearToken(context: Context) {
         prefs(context).edit().clear().apply()
+    }
+
+    /**
+     * FCM's data-message delivery is at-least-once: a device that's briefly
+     * offline/dozing when `incoming_call` is sent can have it queued and
+     * redelivered later, even minutes after the call was already answered/
+     * declined/ended and CallConnectionService.activeConnections has long
+     * since forgotten about it (that map is in-memory only). Without this,
+     * a redelivered incoming_call re-runs addNewIncomingCall for a call_id
+     * that's already over, and the phone rings again for no reason. Marked
+     * finished from every terminal point (CallConnection.onAnswer/onReject/
+     * onDisconnect/endFromRemote, and the call_ended path in
+     * MyFirebaseMessagingReceiver), checked in handleIncomingCall before
+     * ever touching TelecomManager. Bounded ring buffer, not a per-call
+     * expiry -- call ids are small integers as strings and this only needs
+     * to outlive FCM's redelivery window, not persist forever.
+     */
+    fun markCallFinished(context: Context, callId: String) {
+        val p = prefs(context)
+        val current = (p.getString(KEY_FINISHED_CALLS, "") ?: "")
+            .split(",").filter { it.isNotEmpty() }.toMutableList()
+        current.remove(callId)
+        current.add(callId)
+        while (current.size > MAX_FINISHED_CALLS) current.removeAt(0)
+        p.edit().putString(KEY_FINISHED_CALLS, current.joinToString(",")).apply()
+    }
+
+    fun isCallFinished(context: Context, callId: String): Boolean {
+        val p = prefs(context)
+        return (p.getString(KEY_FINISHED_CALLS, "") ?: "").split(",").contains(callId)
     }
 
     /**

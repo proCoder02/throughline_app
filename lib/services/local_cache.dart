@@ -100,6 +100,15 @@ class LocalCache {
     return _box.put('persona_completed', completed.toString());
   }
 
+  /// Device-local light/dark/system preference (ThemeMode.name, e.g.
+  /// "system"/"light"/"dark") -- a display setting, not account data, so it
+  /// lives here rather than on the server. Reset to the default (system) on
+  /// logout along with everything else in this box -- an acceptable,
+  /// unsurprising fallback rather than something worth preserving specially.
+  String? getThemeMode() => _box.get('theme_mode');
+
+  Future<void> setThemeMode(String mode) => _box.put('theme_mode', mode);
+
   /// Wipes every cached chat/conversation -- called on logout so a second
   /// account signing in on the same device never sees the previous
   /// account's cached chats.

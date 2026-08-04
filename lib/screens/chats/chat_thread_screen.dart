@@ -5,6 +5,7 @@ import '../../models/chat_message.dart';
 import '../../models/conversation.dart';
 import '../../services/conversation_service.dart';
 import '../../state/listen_provider.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/chat_list_skeleton.dart';
@@ -145,9 +146,14 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     }
   }
 
-  void _tapTag(ListenProvider listen, String tag) {
-    listen.removeTag(tag);
-    _send(listen, tag);
+  void _tapTopic(ListenProvider listen, String topic) {
+    listen.removeTopic(topic);
+    _send(listen, topic);
+  }
+
+  void _tapQuestion(ListenProvider listen, String question) {
+    listen.removeQuestion(question);
+    _send(listen, question);
   }
 
   Future<void> _delete() async {
@@ -174,6 +180,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final listen = context.watch<ListenProvider>();
+    // A pushed route -- doesn't reliably repaint on a theme change without
+    // this explicit dependency (see home_shell.dart's identical comment).
+    context.watch<ThemeProvider>();
     final isLive = _isLive(listen);
 
     if (_loading) {
@@ -204,7 +213,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                                 overflow: TextOverflow.ellipsis),
                           ],
                         )
-                      : const Text('Ask about this conversation',
+                      : Text('Ask about this conversation',
                           style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
                 ],
               ),
@@ -236,7 +245,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           if (isLive && listen.pendingSpeakerIndex != null) _renamePanel(listen, listen.pendingSpeakerIndex!),
           Expanded(
             child: _messages.isEmpty
-                ? const Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
+                ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -244,17 +253,34 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                     itemBuilder: (context, i) => MessageBubble(message: _messages[i]),
                   ),
           ),
-          if (isLive && listen.tags.isNotEmpty)
+          if (isLive && listen.topics.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: listen.topics
+                    .map((t) => TagChip(
+                          label: t,
+                          onTap: () => _tapTopic(listen, t),
+                          onDismiss: () => listen.removeTopic(t),
+                          backgroundColor: AppColors.accent.withValues(alpha: 0.08),
+                          borderColor: AppColors.accent.withValues(alpha: 0.35),
+                        ))
+                    .toList(),
+              ),
+            ),
+          if (isLive && listen.questions.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 4,
-                children: listen.tags
-                    .map((t) => TagChip(
-                          label: t,
-                          onTap: () => _tapTag(listen, t),
-                          onDismiss: () => listen.removeTag(t),
+                children: listen.questions
+                    .map((q) => TagChip(
+                          label: q,
+                          onTap: () => _tapQuestion(listen, q),
+                          onDismiss: () => listen.removeQuestion(q),
                         ))
                     .toList(),
               ),

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/friend.dart';
 import '../../services/friend_service.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 
 class FriendMoodScreen extends StatefulWidget {
@@ -26,6 +28,7 @@ class _FriendMoodScreenState extends State<FriendMoodScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(title: Text("${widget.friend.displayName}'s mood")),
       body: FutureBuilder<CompiledMood>(
@@ -39,7 +42,7 @@ class _FriendMoodScreenState extends State<FriendMoodScreen> {
           }
           final mood = snap.data;
           if (mood?.emoji == null) {
-            return const Center(child: Text('No mood data logged yet today', style: TextStyle(color: AppColors.textSoft)));
+            return Center(child: Text('No mood data logged yet today', style: TextStyle(color: AppColors.textSoft)));
           }
           return Center(
             child: Column(
@@ -49,12 +52,12 @@ class _FriendMoodScreenState extends State<FriendMoodScreen> {
                 const SizedBox(height: 8),
                 Text(
                   mood.moodLabel![0].toUpperCase() + mood.moodLabel!.substring(1),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.text),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.text),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'As of ${DateFormat.Hm().format(mood.windowStart)}–${DateFormat.Hm().format(mood.windowEnd)}',
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.textSoft),
+                  style: TextStyle(fontSize: 12.5, color: AppColors.textSoft),
                 ),
               ],
             ),
