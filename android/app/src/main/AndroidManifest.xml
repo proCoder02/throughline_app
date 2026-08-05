@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
@@ -8,9 +9,16 @@
          the user at runtime. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
-    <!-- Lets the incoming-call notification auto-launch the app over the
-         lock screen/whatever's on top, like a real call; see
-         PushService's use of fullScreenIntent for the incoming_call type. -->
+    <!-- Self-managed android.telecom.ConnectionService (native incoming-call
+         UI, see CallConnectionService.kt): lets this app register a
+         PhoneAccount and drive calls through Telecom without needing to be
+         the user's default dialer. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
+    <!-- Lets the incoming-call notification's fullScreenIntent launch
+         IncomingCallActivity directly over the lock screen, needed because
+         some OEM dialers (confirmed on ColorOS) don't render a visible UI
+         for third-party self-managed Telecom calls on their own, so this
+         app must show its own ringing screen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <application
         android:label="throughline"
@@ -45,6 +53,53 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Native ringing screen, launched via the incoming-call
+             notification's fullScreenIntent (see CallNotificationHelper.kt).
+             Shows over the lock screen and turns the screen on regardless
+             of what the OEM dialer does with the underlying self-managed
+             Telecom connection. -->
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" />
+
+        <!-- Native incoming-call UI (see CallConnectionService.kt/
+             CallConnection.kt): a self-managed android.telecom.ConnectionService,
+             bound by the OS's Telecom stack rather than by this app directly. -->
+        <service
+            android:name=".CallConnectionService"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService"/>
+            </intent-filter>
+        </service>
+
+        <!-- Replaces the firebase_messaging plugin's own FCM receiver with
+             MyFirebaseMessagingReceiver, which intercepts incoming_call/
+             call_ended to drive the native Telecom UI above directly, then
+             falls through to the plugin's original behavior (super.onReceive)
+             for every other push type; see that class for why this is the
+             actual FCM entry point (not FlutterFirebaseMessagingService,
+             whose onMessageReceived is an empty stub). -->
+        <receiver
+            android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingReceiver"
+            tools:node="remove"/>
+        <receiver
+            android:name=".MyFirebaseMessagingReceiver"
+            android:exported="true"
+            android:permission="com.google.android.c2dm.permission.SEND">
+            <intent-filter>
+                <action android:name="com.google.android.c2dm.intent.RECEIVE"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

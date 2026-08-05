@@ -28,11 +28,11 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            FormattedText(message.content, style: const TextStyle(color: AppColors.text)),
+            FormattedText(message.content, style: TextStyle(color: AppColors.text)),
             const SizedBox(height: 2),
             Text(
               DateFormat.Hm().format(message.createdAt),
-              style: const TextStyle(color: AppColors.textSoft, fontSize: 11),
+              style: TextStyle(color: AppColors.textSoft, fontSize: 11),
             ),
           ],
         ),

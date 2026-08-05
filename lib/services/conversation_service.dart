@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../models/search_result.dart';
 import 'api_client.dart';
 import 'local_cache.dart';
 
@@ -101,5 +102,14 @@ class ConversationService {
       ChatMessage(role: 'assistant', content: reply, createdAt: now),
     ]);
     return reply;
+  }
+
+  /// Full-text search over titles/transcripts/chat content (GET /search) --
+  /// not cached locally, unlike everything above: results are query-specific
+  /// and change as chats grow, so there's nothing durable worth persisting
+  /// on-device the way a conversation's own messages are.
+  Future<List<SearchResult>> search(String query) async {
+    final r = await _api.dio.get('/search', queryParameters: {'q': query});
+    return (r.data as List).map((j) => SearchResult.fromJson(j)).toList();
   }
 }

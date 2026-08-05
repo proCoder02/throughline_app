@@ -82,9 +82,9 @@ class _PersonaOnboardingScreenState extends State<PersonaOnboardingScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.text)),
+        Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.text)),
         const SizedBox(height: 4),
-        Text('Pick at least one', style: const TextStyle(fontSize: 12, color: AppColors.textSoft)),
+        Text('Pick at least one', style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -125,10 +125,10 @@ class _PersonaOnboardingScreenState extends State<PersonaOnboardingScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Tell us about you',
+                      Text('Tell us about you',
                           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.text)),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'We use this information to make your experience more personalized and better tailored to you.',
                         style: TextStyle(color: AppColors.textSoft),
                       ),

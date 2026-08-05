@@ -9,6 +9,7 @@ import 'package:record/record.dart';
 import '../main.dart' show authProvider;
 import '../models/call.dart';
 import '../services/call_service.dart';
+import '../services/push_service.dart' show markCallFinishedNative;
 
 enum CallStatus { idle, connecting, active }
 
@@ -27,9 +28,33 @@ class CallProvider extends ChangeNotifier {
   List<String> participantNames = [];
   final List<String> dropNotices = [];
 
+  // WhatsApp-style "minimize and keep browsing the app" -- true collapses
+  // CallOverlay down to a small tappable pill (see call_overlay.dart) while
+  // the call itself (LiveKit room, recording, etc.) keeps running unchanged
+  // underneath. Only meaningful once connecting/active; never true for the
+  // still-ringing incoming screen (see CallOverlay's showIncoming check).
+  bool isMinimized = false;
+
+  DateTime? _connectedAt;
+  Timer? _durationTicker;
+
+  /// Elapsed call time once active, for the ticking mm:ss display -- zero
+  /// (not null) so callers can format it unconditionally.
+  Duration get elapsed => _connectedAt == null ? Duration.zero : DateTime.now().difference(_connectedAt!);
+
   lk.Room? _room;
   lk.EventsListener<lk.RoomEvent>? _listener;
   String? _recordingPath;
+
+  // Recording only ever makes sense once there's an actual second person in
+  // the room -- the caller connects to LiveKit the instant they place the
+  // call, well before the callee answers, so starting the recorder
+  // unconditionally at that point captured nothing but ringback/silence for
+  // every declined/missed call. That got uploaded and transcribed anyway,
+  // producing a garbage conversation (and a "conversation ready" push) for
+  // calls nobody actually had. Gating on this flag instead means a call that
+  // never connects two people never records or uploads anything at all.
+  bool _remoteEverJoined = false;
 
   // Which participant is the initiator matters for group-call hangup rules
   // (see the ParticipantDisconnectedEvent handler below): identity strings
@@ -40,17 +65,61 @@ class CallProvider extends ChangeNotifier {
 
   Future<void> startCall(List<int> friendIds) async {
     _initiatorIdentity = authProvider.userId?.toString();
+    // Flip out of idle before the network round-trip below, not after --
+    // CallOverlay treats status == idle as "no active/joining call" and
+    // will otherwise still render a stale incoming-call screen (from a WS/
+    // FCM incoming_call event that arrives during this await) on top of a
+    // call the user already answered natively (see CallConnection.kt).
+    status = CallStatus.connecting;
+    notifyListeners();
     final info = await _service.start(friendIds);
     await _connect(info);
   }
 
   Future<void> joinCall(int callId, {required int callerId}) async {
     _initiatorIdentity = callerId.toString();
-    final info = await _service.join(callId);
-    await _connect(info);
+    status = CallStatus.connecting;
+    notifyListeners();
+    // Same reasoning as declineCall(): answered in-app (foregrounded ringing
+    // screen) means native never saw this call_id at all, so it needs
+    // telling directly too.
+    unawaited(markCallFinishedNative(callId));
+    try {
+      final info = await _service.join(callId);
+      await _connect(info);
+    } catch (e) {
+      // Without this, a failed join (network blip, call already ended
+      // server-side by the ring-timeout worker, etc.) left status stuck on
+      // CallStatus.connecting forever -- an unrecoverable "Calling..."
+      // screen with no way back, since nothing else ever resets it.
+      debugPrint('[call] joinCall($callId) failed: $e');
+      status = CallStatus.idle;
+      notifyListeners();
+    }
   }
 
-  Future<void> declineCall(int callId) => _service.decline(callId);
+  Future<void> declineCall(int callId) {
+    debugPrint('[call] declineCall($callId)');
+    // Resolved entirely in Dart (e.g. app was foregrounded when this call
+    // arrived, so the native receiver never intercepted it) -- tell native
+    // too, otherwise a later FCM redelivery of this same incoming_call push
+    // finds no record of it being over and rings it again. See
+    // markCallFinishedNative's doc comment.
+    unawaited(markCallFinishedNative(callId));
+    return _service.decline(callId);
+  }
+
+  void minimize() {
+    if (status == CallStatus.idle || isMinimized) return;
+    isMinimized = true;
+    notifyListeners();
+  }
+
+  void maximize() {
+    if (!isMinimized) return;
+    isMinimized = false;
+    notifyListeners();
+  }
 
   /// Fired by NotifyProvider on a `call_declined` push -- the backend only
   /// sends this when nobody is left who could still join, so it's always
@@ -69,7 +138,13 @@ class CallProvider extends ChangeNotifier {
     final room = lk.Room();
     final listener = room.createListener();
     listener
-      ..on<lk.ParticipantConnectedEvent>((_) => _refreshRoster())
+      ..on<lk.ParticipantConnectedEvent>((_) {
+        _refreshRoster();
+        if (!_remoteEverJoined) {
+          _remoteEverJoined = true;
+          unawaited(_startLocalRecording());
+        }
+      })
       ..on<lk.ParticipantDisconnectedEvent>((e) {
         _addDropNotice(e.participant.name.isNotEmpty ? e.participant.name : e.participant.identity);
         _refreshRoster();
@@ -94,10 +169,19 @@ class CallProvider extends ChangeNotifier {
     _room = room;
     _listener = listener;
     status = CallStatus.active;
+    _connectedAt = DateTime.now();
+    _durationTicker?.cancel();
+    _durationTicker = Timer.periodic(const Duration(seconds: 1), (_) => notifyListeners());
     _refreshRoster();
     notifyListeners();
 
-    unawaited(_startLocalRecording());
+    // Covers the callee's side: by the time they answer, the caller is
+    // typically already in the room, so ParticipantConnectedEvent above
+    // won't fire again for them -- check directly here too.
+    if (!_remoteEverJoined && room.remoteParticipants.isNotEmpty) {
+      _remoteEverJoined = true;
+      unawaited(_startLocalRecording());
+    }
   }
 
   void _refreshRoster() {
@@ -140,6 +224,10 @@ class CallProvider extends ChangeNotifier {
     final listener = _listener;
 
     status = CallStatus.idle;
+    isMinimized = false;
+    _connectedAt = null;
+    _durationTicker?.cancel();
+    _durationTicker = null;
     _room = null;
     _listener = null;
     notifyListeners();
@@ -147,9 +235,11 @@ class CallProvider extends ChangeNotifier {
     await listener?.dispose();
 
     try {
-      final path = await _recorder.stop();
-      if (id != null && path != null) {
-        await _service.uploadRecording(id, File(path));
+      if (_recordingPath != null) {
+        final path = await _recorder.stop();
+        if (id != null && path != null) {
+          await _service.uploadRecording(id, File(path));
+        }
       }
     } catch (_) {
       // Best-effort, matches the web client swallowing upload errors.
@@ -167,6 +257,8 @@ class CallProvider extends ChangeNotifier {
     participantNames = [];
     dropNotices.clear();
     _initiatorIdentity = null;
+    _remoteEverJoined = false;
+    _recordingPath = null;
     notifyListeners();
   }
 }

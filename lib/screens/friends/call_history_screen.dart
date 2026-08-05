@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/friend.dart';
 import '../../services/friend_service.dart';
+import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../utils/call_format.dart';
 import 'friend_mood_screen.dart';
@@ -91,6 +93,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(
         title: Text(_friend.displayName),
@@ -124,26 +127,31 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
           }
           final calls = snap.data ?? [];
           if (calls.isEmpty) {
-            return const Center(child: Text('No calls yet', style: TextStyle(color: AppColors.textSoft)));
+            return Center(child: Text('No calls yet', style: TextStyle(color: AppColors.textSoft)));
           }
           return ListView.separated(
             itemCount: calls.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
+            separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
             itemBuilder: (context, i) {
               final c = calls[i];
               final duration = c.endedAt?.difference(c.createdAt);
               return ListTile(
                 tileColor: AppColors.panel,
                 leading: Icon(
-                  c.outgoing ? Icons.call_made : Icons.call_received,
-                  color: AppColors.accent,
+                  c.missed
+                      ? Icons.call_missed
+                      : (c.outgoing ? Icons.call_made : Icons.call_received),
+                  color: c.missed ? AppColors.danger : AppColors.accent,
                 ),
-                title: Text(c.outgoing ? 'Outgoing' : 'Incoming'),
+                title: Text(
+                  c.missed ? 'Missed call' : (c.outgoing ? 'Outgoing' : 'Incoming'),
+                  style: c.missed ? const TextStyle(color: AppColors.danger) : null,
+                ),
                 subtitle: Text(
-                  duration != null && duration.inSeconds > 0
+                  !c.missed && duration != null && duration.inSeconds > 0
                       ? '${formatCallTimestamp(c.createdAt)}  ·  ${_formatDuration(duration)}'
                       : formatCallTimestamp(c.createdAt),
-                  style: const TextStyle(color: AppColors.textSoft),
+                  style: TextStyle(color: AppColors.textSoft),
                 ),
               );
             },

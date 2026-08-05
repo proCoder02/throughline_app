@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/auth_provider.dart';
+import '../state/theme_provider.dart';
 import '../theme.dart';
 import '../widgets/category_menu.dart';
 
@@ -45,6 +46,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider>();
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -63,7 +65,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.accent)),
                     const SizedBox(height: 4),
-                    const Text('Listens once. Remembers everything.',
+                    Text('Listens once. Remembers everything.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppColors.textSoft)),
                     const SizedBox(height: 24),
