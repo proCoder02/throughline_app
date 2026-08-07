@@ -80,7 +80,14 @@
       "PowerShell(adb -s \"adb-9d119f1c-jUllZN \\(2\\)._adb-tls-connect._tcp\" install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\" 2>&1)",
       "PowerShell(adb kill-server)",
       "PowerShell(adb start-server)",
-      "PowerShell(adb install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")"
+      "PowerShell(adb install -r \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\throughline\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-release.apk\")",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:5000/\" -UseBasicParsing -TimeoutSec 5; Write-Output \"Backend responded: $\\($r.StatusCode\\)\" } catch { Write-Output \"Backend NOT responding: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(& \"C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text\\\\emotional_intelligence\\\\.venv\\\\Scripts\\\\python.exe\" -m pip install flask 2>&1)",
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; \\(Get-Content .env -Raw\\) -replace 'USE_GROQ_STT=trueEMOTIONAL_INTELLIGENCE_ENABLED=false', \"USE_GROQ_STT=true`r`nEMOTIONAL_INTELLIGENCE_ENABLED=false\" | Set-Content .env -Encoding utf8 -NoNewline; Select-String -Path .env -Pattern 'USE_GROQ_STT|EMOTIONAL_INTELLIGENCE_ENABLED')",
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $keys = @\\('DATABASE_URL','olama_api_key','OLLAMA_API_KEY','GROQ_API_KEY','DEEPGRAM_API_KEY','SMTP_PASSWORD','FLASK_SECRET_KEY','sarvam_api'\\); foreach \\($k in $keys\\) { $found = Select-String -Path .env -Pattern \"^$k=\" -Quiet; Write-Output \"$k present: $found\" }; \\(Get-Content .env | Measure-Object -Line\\).Lines)",
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); $first10 = $bytes[0..9] -join ' '; Write-Output \"first 10 bytes: $first10\"; $line1 = \\(Get-Content .env\\)[0]; Write-Output \"line 1 as read: $line1\")",
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); if \\($bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191\\) { $fixed = $bytes[3..\\($bytes.Length-1\\)]; [System.IO.File]::WriteAllBytes\\(\"$pwd\\\\.env\", $fixed\\); Write-Output \"BOM stripped, wrote $\\($fixed.Length\\) bytes \\(was $\\($bytes.Length\\)\\)\" } else { Write-Output \"no BOM found, nothing changed\" })",
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); Write-Output \"first 10 bytes: $\\($bytes[0..9] -join ' '\\)\"; Write-Output \"total bytes: $\\($bytes.Length\\)\"; Get-Content .env | Select-Object -First 3)"
     ],
     "additionalDirectories": [
       "C:\\Users\\P3INW57"
