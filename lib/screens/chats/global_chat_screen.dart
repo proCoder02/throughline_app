@@ -8,6 +8,7 @@ import '../../theme.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/typing_indicator.dart';
 
 /// Persistent cross-session thread (§6): "what did I discuss with Rahul
 /// last week?" -- scoped to the whole account, not one conversation.
@@ -27,6 +28,16 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   bool _loading = true;
   bool _sending = false;
   bool _offline = false;
+  ChatMessage? _replyingTo;
+
+  void _startReply(ChatMessage message) {
+    setState(() => _replyingTo = message);
+  }
+
+  String _quoteSnippet(ChatMessage message) {
+    final oneLine = message.content.replaceAll('\n', ' ').trim();
+    return oneLine.length > 80 ? '${oneLine.substring(0, 80)}...' : oneLine;
+  }
 
   @override
   void initState() {
@@ -77,14 +88,29 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   Future<void> _send() async {
     final text = _promptController.text.trim();
     if (text.isEmpty || _sending) return;
+    final replyingTo = _replyingTo;
+    // No message-threading in /chat/global itself -- fold the quoted
+    // context into the actual prompt sent to the backend so the LLM knows
+    // what "this" refers to, while the user's own bubble shows just their
+    // plain text plus the quote strip (see MessageBubble/_ReplyQuote).
+    final textForBackend = replyingTo == null ? text : 'Replying to: "${_quoteSnippet(replyingTo)}"\n\n$text';
     setState(() {
       _sending = true;
-      _messages = [..._messages, ChatMessage(role: 'user', content: text, createdAt: DateTime.now())];
+      _replyingTo = null;
+      _messages = [
+        ..._messages,
+        ChatMessage(
+          role: 'user',
+          content: text,
+          createdAt: DateTime.now(),
+          replyToPreview: replyingTo == null ? null : _quoteSnippet(replyingTo),
+        ),
+      ];
     });
     _scrollToEnd();
     _promptController.clear();
     try {
-      final reply = await _service.sendGlobalChat(text);
+      final reply = await _service.sendGlobalChat(textForBackend);
       if (!mounted) return;
       setState(() {
         _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
@@ -140,42 +166,74 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                       : ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, i) => MessageBubble(message: _messages[i]),
+                          itemCount: _messages.length + (_sending ? 1 : 0),
+                          itemBuilder: (context, i) {
+                            if (i == _messages.length) return const TypingIndicator();
+                            final message = _messages[i];
+                            return MessageBubble(message: message, onReply: () => _startReply(message));
+                          },
                         ),
                 ),
                 SafeArea(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     color: AppColors.bgApp,
-                    child: Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _promptController,
-                            decoration: InputDecoration(
-                              hintText: 'e.g. "What did I discuss with Rahul last week?"',
-                              filled: true,
-                              fillColor: AppColors.panel,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                        if (_replyingTo != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.panel,
+                              borderRadius: BorderRadius.circular(8),
+                              border: const Border(left: BorderSide(color: AppColors.accent, width: 3)),
                             ),
-                            onSubmitted: (_) => _send(),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _quoteSnippet(_replyingTo!),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(color: AppColors.textSoft, fontSize: 12.5),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () => setState(() => _replyingTo = null),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        CircleAvatar(
-                          backgroundColor: AppColors.accent,
-                          child: IconButton(
-                            icon: _sending
-                                ? const SizedBox(
-                                    height: 16,
-                                    width: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.send, color: Colors.white, size: 20),
-                            onPressed: _sending ? null : _send,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _promptController,
+                                decoration: InputDecoration(
+                                  hintText: 'e.g. "What did I discuss with Rahul last week?"',
+                                  filled: true,
+                                  fillColor: AppColors.panel,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                                ),
+                                onSubmitted: (_) => _send(),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            CircleAvatar(
+                              backgroundColor: AppColors.accent,
+                              child: IconButton(
+                                icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                                onPressed: _sending ? null : _send,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

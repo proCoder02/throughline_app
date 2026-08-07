@@ -7,13 +7,17 @@ import 'formatted_text.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
+  // Swipe-to-reply (WhatsApp-style): when provided, wraps the bubble in a
+  // Dismissible that never actually dismisses -- swiping just reveals a
+  // reply icon and invokes this callback, leaving the message in place.
+  final VoidCallback? onReply;
 
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({super.key, required this.message, this.onReply});
 
   @override
   Widget build(BuildContext context) {
     final isOutgoing = message.role == 'user';
-    return Align(
+    final bubble = Align(
       alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -28,6 +32,10 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (message.replyToPreview != null) ...[
+              _ReplyQuote(text: message.replyToPreview!),
+              const SizedBox(height: 6),
+            ],
             FormattedText(message.content, style: TextStyle(color: AppColors.text)),
             const SizedBox(height: 2),
             Text(
@@ -36,6 +44,49 @@ class MessageBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+
+    if (onReply == null) return bubble;
+
+    return Dismissible(
+      key: ValueKey('${message.createdAt.microsecondsSinceEpoch}-${message.role}'),
+      direction: DismissDirection.startToEnd,
+      // Swiping just triggers reply -- the message must never actually be
+      // removed, so confirmDismiss always returns false.
+      confirmDismiss: (_) async {
+        onReply?.call();
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 24),
+        child: const Icon(Icons.reply, color: AppColors.accent),
+      ),
+      child: bubble,
+    );
+  }
+}
+
+class _ReplyQuote extends StatelessWidget {
+  final String text;
+
+  const _ReplyQuote({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.textSoft.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: const Border(left: BorderSide(color: AppColors.accent, width: 3)),
+      ),
+      child: Text(
+        text,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: AppColors.textSoft, fontSize: 12.5),
       ),
     );
   }
