@@ -7,6 +7,7 @@ import '../../services/profile_service.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/offline_banner.dart';
 import 'profile_detail_screen.dart';
 
 class ProfilesScreen extends StatefulWidget {
@@ -18,21 +19,47 @@ class ProfilesScreen extends StatefulWidget {
 
 class _ProfilesScreenState extends State<ProfilesScreen> {
   final _service = ProfileService();
-  late Future<Map<String, Profile>> _future;
+  Map<String, Profile>? _profiles;
+  bool _loading = true;
+  Object? _error;
+  bool _offline = false;
   String _search = '';
 
   @override
   void initState() {
     super.initState();
-    _future = _service.list();
+    // Show the on-device copy instantly if there is one, then always refresh
+    // from the network in the background -- same cache-first pattern as
+    // ChatsScreen, so this tab still shows its last-known data offline.
+    final cached = _service.listCached();
+    if (cached != null) {
+      _profiles = cached;
+      _loading = false;
+    }
+    _load();
   }
 
-  void _reload() {
-    final future = _service.list();
-    setState(() {
-      _future = future;
-    });
+  Future<void> _load() async {
+    try {
+      final items = await _service.list();
+      if (!mounted) return;
+      setState(() {
+        _profiles = items;
+        _loading = false;
+        _error = null;
+        _offline = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _offline = true;
+        if (_profiles == null) _error = e;
+      });
+    }
   }
+
+  Future<void> _reload() => _load();
 
   @override
   Widget build(BuildContext context) {
@@ -55,46 +82,50 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
           ),
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async => _reload(),
-        child: FutureBuilder<Map<String, Profile>>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return Center(child: Text('Failed to load profiles: ${snap.error}'));
-            }
-            var profiles = (snap.data ?? {}).values.toList();
-            if (_search.isNotEmpty) {
-              profiles = profiles.where((p) => p.name.toLowerCase().contains(_search)).toList();
-            }
-            if (profiles.isEmpty) {
-              return Center(
-                child: Text(
-                  _search.isNotEmpty ? 'No profiles match your search' : 'No profiles yet',
-                  style: TextStyle(color: AppColors.textSoft),
-                ),
-              );
-            }
-            return ListView.separated(
-              itemCount: profiles.length,
-              separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
-              itemBuilder: (context, i) {
-                final p = profiles[i];
-                return _ProfileRow(
-                  profile: p,
-                  onTap: () async {
-                    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfileDetailScreen(profile: p)));
-                    if (mounted) _reload();
-                  },
-                );
-              },
-            );
-          },
-        ),
+      body: Column(
+        children: [
+          if (_offline) const OfflineBanner(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _reload,
+              child: _buildBody(),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_profiles == null) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      return Center(child: Text('Failed to load profiles: $_error'));
+    }
+    var profiles = _profiles!.values.toList();
+    if (_search.isNotEmpty) {
+      profiles = profiles.where((p) => p.name.toLowerCase().contains(_search)).toList();
+    }
+    if (profiles.isEmpty) {
+      return Center(
+        child: Text(
+          _search.isNotEmpty ? 'No profiles match your search' : 'No profiles yet',
+          style: TextStyle(color: AppColors.textSoft),
+        ),
+      );
+    }
+    return ListView.separated(
+      itemCount: profiles.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
+      itemBuilder: (context, i) {
+        final p = profiles[i];
+        return _ProfileRow(
+          profile: p,
+          onTap: () async {
+            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfileDetailScreen(profile: p)));
+            if (mounted) _reload();
+          },
+        );
+      },
     );
   }
 }

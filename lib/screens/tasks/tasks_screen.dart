@@ -12,6 +12,7 @@ import '../../theme.dart';
 import '../../widgets/category_menu.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
+import '../../widgets/offline_banner.dart';
 import '../chats/chat_thread_screen.dart';
 
 class TasksScreen extends StatefulWidget {
@@ -23,7 +24,10 @@ class TasksScreen extends StatefulWidget {
 
 class _TasksScreenState extends State<TasksScreen> {
   final _service = TaskService();
-  late Future<List<Task>> _future;
+  List<Task>? _tasks;
+  bool _loading = true;
+  Object? _error;
+  bool _offline = false;
   String _status = 'open';
   String? _category;
 
@@ -40,11 +44,48 @@ class _TasksScreenState extends State<TasksScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _service.list(status: _status);
+    // Show the on-device copy instantly if there is one, then always refresh
+    // from the network in the background -- same cache-first pattern as
+    // ChatsScreen, so this tab still shows its last-known list offline.
+    final cached = _service.listCached(_status);
+    if (cached != null) {
+      _tasks = cached;
+      _loading = false;
+    }
+    _load();
     notifyProvider.clearTaskBadge();
   }
 
-  void _reload() => setState(() => _future = _service.list(status: _status));
+  Future<void> _load() async {
+    try {
+      final items = await _service.list(status: _status);
+      if (!mounted) return;
+      setState(() {
+        _tasks = items;
+        _loading = false;
+        _error = null;
+        _offline = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _offline = true;
+        if (_tasks == null) _error = e;
+      });
+    }
+  }
+
+  Future<void> _reload() => _load();
+
+  void _switchStatus(String status) {
+    setState(() {
+      _status = status;
+      _tasks = _service.listCached(status);
+      _loading = _tasks == null;
+    });
+    _load();
+  }
 
   Future<void> _toggle(Task task) async {
     HapticFeedback.lightImpact();
@@ -156,10 +197,7 @@ class _TasksScreenState extends State<TasksScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
             initialValue: _status,
-            onSelected: (v) => setState(() {
-              _status = v;
-              _future = _service.list(status: _status);
-            }),
+            onSelected: _switchStatus,
             itemBuilder: (context) => _statusLabels.entries
                 .map((e) => PopupMenuItem(value: e.key, child: Text(e.value)))
                 .toList(),
@@ -167,67 +205,70 @@ class _TasksScreenState extends State<TasksScreen> {
           CategoryMenu(selected: _category, onChanged: (v) => setState(() => _category = v)),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async => _reload(),
-        child: FutureBuilder<List<Task>>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return Center(child: Text('Failed to load tasks: ${snap.error}'));
-            }
-            var items = snap.data ?? [];
-            items = items.where((t) => !_deletedIds.contains(t.id)).toList();
-            if (_category != null) items = items.where((t) => t.category == _category).toList();
-            if (items.isEmpty) {
-              return _status == 'open'
-                  ? const EmptyState(
-                      icon: Icons.celebration_outlined,
-                      title: 'All caught up!',
-                      subtitle: 'No open tasks right now.',
-                    )
-                  : EmptyState(
-                      icon: Icons.checklist_outlined,
-                      title: 'No ${_statusLabels[_status]!.toLowerCase()} tasks',
-                    );
-            }
-            return ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 56),
-              itemBuilder: (context, i) {
-                final task = items[i];
-                return FadeSlideIn(
-                  key: ValueKey('fade_${task.id}'),
-                  index: i,
-                  child: Slidable(
-                  key: ValueKey(task.id),
-                  endActionPane: ActionPane(
-                    motion: const DrawerMotion(),
-                    extentRatio: 0.25,
-                    children: [
-                      SlidableAction(
-                        onPressed: (_) => _confirmDelete(task),
-                        backgroundColor: AppColors.danger,
-                        foregroundColor: Colors.white,
-                        icon: Icons.delete_outline,
-                        label: 'Delete',
-                      ),
-                    ],
-                  ),
-                  child: _TaskRow(
-                    task: task,
-                    onToggle: () => _toggle(task),
-                    onEdit: () => _edit(task),
-                  ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
+      body: Column(
+        children: [
+          if (_offline) const OfflineBanner(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _reload,
+              child: _buildBody(),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_tasks == null) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      return Center(child: Text('Failed to load tasks: $_error'));
+    }
+    var items = _tasks!.where((t) => !_deletedIds.contains(t.id)).toList();
+    if (_category != null) items = items.where((t) => t.category == _category).toList();
+    if (items.isEmpty) {
+      return _status == 'open'
+          ? const EmptyState(
+              icon: Icons.celebration_outlined,
+              title: 'All caught up!',
+              subtitle: 'No open tasks right now.',
+            )
+          : EmptyState(
+              icon: Icons.checklist_outlined,
+              title: 'No ${_statusLabels[_status]!.toLowerCase()} tasks',
+            );
+    }
+    return ListView.separated(
+      itemCount: items.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 56),
+      itemBuilder: (context, i) {
+        final task = items[i];
+        return FadeSlideIn(
+          key: ValueKey('fade_${task.id}'),
+          index: i,
+          child: Slidable(
+            key: ValueKey(task.id),
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              extentRatio: 0.25,
+              children: [
+                SlidableAction(
+                  onPressed: (_) => _confirmDelete(task),
+                  backgroundColor: AppColors.danger,
+                  foregroundColor: Colors.white,
+                  icon: Icons.delete_outline,
+                  label: 'Delete',
+                ),
+              ],
+            ),
+            child: _TaskRow(
+              task: task,
+              onToggle: () => _toggle(task),
+              onEdit: () => _edit(task),
+            ),
+          ),
+        );
+      },
     );
   }
 }

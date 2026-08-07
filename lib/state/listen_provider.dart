@@ -32,6 +32,7 @@ class ListenProvider extends ChangeNotifier {
   bool _done = false;
   String status = '';
   int? conversationId;
+  DateTime? startedAt;
 
   final Map<int, String> speakerNames = {};
   final List<int> seenIndices = [];
@@ -98,6 +99,7 @@ class ListenProvider extends ChangeNotifier {
     _audioSub = stream.listen(_socket.sendAudio);
 
     isListening = true;
+    startedAt = DateTime.now();
     status = 'Listening...';
     notifyListeners();
   }
@@ -222,6 +224,7 @@ class ListenProvider extends ChangeNotifier {
     }
     _questionTimers.clear();
     isListening = false;
+    startedAt = null;
     _stopping = false;
     status = 'Stopped. Saved automatically.';
     pendingSpeakerIndex = null;

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 /// Flipped by ThemeProvider whenever the effective brightness changes.
@@ -89,6 +90,20 @@ ThemeData buildAppTheme() {
       backgroundColor: AppColors.panel,
       selectedItemColor: AppColors.railIconActive,
       unselectedItemColor: AppColors.railIcon,
+    ),
+    // Material 3's Android default (ZoomPageTransitionsBuilder) composites
+    // both the outgoing and incoming page through a simultaneous fade+scale
+    // -- noticeably heavier than a plain slide, and the "zoom" a couple of
+    // screens visibly do on push. CupertinoPageTransitionsBuilder for every
+    // platform gives one cheap, GPU-friendly slide everywhere in the app --
+    // every plain MaterialPageRoute push (opening a conversation, opening
+    // the live thread from Listen, etc.) automatically gets it, so they all
+    // stay visually consistent with each other for free.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      },
     ),
   );
 }

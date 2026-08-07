@@ -8,6 +8,7 @@ import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/offline_banner.dart';
 import 'call_history_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
@@ -20,7 +21,10 @@ class FriendsScreen extends StatefulWidget {
 class _FriendsScreenState extends State<FriendsScreen> {
   final _service = FriendService();
   final _codeController = TextEditingController();
-  late Future<List<Friend>> _future;
+  List<Friend>? _friends;
+  bool _loading = true;
+  Object? _loadError;
+  bool _offline = false;
   bool _adding = false;
   String? _error;
   bool _pickingCall = false;
@@ -29,15 +33,38 @@ class _FriendsScreenState extends State<FriendsScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _service.list();
+    // Show the on-device copy instantly if there is one, then always refresh
+    // from the network in the background -- same cache-first pattern as
+    // ChatsScreen, so this tab still shows its last-known list offline.
+    final cached = _service.listCached();
+    if (cached != null) {
+      _friends = cached;
+      _loading = false;
+    }
+    _load();
   }
 
-  void _reload() {
-    final future = _service.list();
-    setState(() {
-      _future = future;
-    });
+  Future<void> _load() async {
+    try {
+      final items = await _service.list();
+      if (!mounted) return;
+      setState(() {
+        _friends = items;
+        _loading = false;
+        _loadError = null;
+        _offline = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _offline = true;
+        if (_friends == null) _loadError = e;
+      });
+    }
   }
+
+  Future<void> _reload() => _load();
 
   Future<void> _addFriend() async {
     final code = _codeController.text.trim();
@@ -151,54 +178,11 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 child: Text('Pick who to call, then confirm below.', style: TextStyle(color: AppColors.textSoft)),
               ),
             ),
+          if (_offline) const OfflineBanner(),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => _reload(),
-              child: FutureBuilder<List<Friend>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snap.hasError) {
-                    return Center(child: Text('Failed to load friends: ${snap.error}'));
-                  }
-                  final friends = snap.data ?? [];
-                  if (friends.isEmpty) {
-                    return Center(
-                      child: Text('No friends added yet', style: TextStyle(color: AppColors.textSoft)),
-                    );
-                  }
-                  return ListView.separated(
-                    itemCount: friends.length,
-                    separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
-                    itemBuilder: (context, i) {
-                      final f = friends[i];
-                      if (_pickingCall) {
-                        final selected = _callSelection.contains(f.id);
-                        return CheckboxListTile(
-                          value: selected,
-                          activeColor: AppColors.accent,
-                          onChanged: (v) => setState(() {
-                            if (v == true) {
-                              _callSelection.add(f.id);
-                            } else {
-                              _callSelection.remove(f.id);
-                            }
-                          }),
-                          secondary: InitialAvatar(name: f.displayName),
-                          title: Text(f.displayName),
-                        );
-                      }
-                      return _FriendRow(
-                        friend: f,
-                        onTap: () => _openFriend(f),
-                        onCall: () => _startCall([f.id]),
-                      );
-                    },
-                  );
-                },
-              ),
+              onRefresh: _reload,
+              child: _buildList(),
             ),
           ),
           if (_pickingCall)
@@ -217,6 +201,47 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildList() {
+    if (_friends == null) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      return Center(child: Text('Failed to load friends: $_loadError'));
+    }
+    final friends = _friends!;
+    if (friends.isEmpty) {
+      return Center(
+        child: Text('No friends added yet', style: TextStyle(color: AppColors.textSoft)),
+      );
+    }
+    return ListView.separated(
+      itemCount: friends.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
+      itemBuilder: (context, i) {
+        final f = friends[i];
+        if (_pickingCall) {
+          final selected = _callSelection.contains(f.id);
+          return CheckboxListTile(
+            value: selected,
+            activeColor: AppColors.accent,
+            onChanged: (v) => setState(() {
+              if (v == true) {
+                _callSelection.add(f.id);
+              } else {
+                _callSelection.remove(f.id);
+              }
+            }),
+            secondary: InitialAvatar(name: f.displayName),
+            title: Text(f.displayName),
+          );
+        }
+        return _FriendRow(
+          friend: f,
+          onTap: () => _openFriend(f),
+          onCall: () => _startCall([f.id]),
+        );
+      },
     );
   }
 }

@@ -10,4 +10,6 @@ class Categories {
       );
 
   List<String> get all => [...builtin, ...custom];
+
+  Map<String, dynamic> toJson() => {'builtin': builtin, 'custom': custom};
 }

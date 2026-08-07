@@ -1,12 +1,18 @@
 import '../models/task.dart';
 import 'api_client.dart';
+import 'local_cache.dart';
 
 class TaskService {
   final _api = ApiClient.instance;
+  final _cache = LocalCache.instance;
+
+  List<Task>? listCached(String status) => _cache.getTasks(status);
 
   Future<List<Task>> list({String status = 'all'}) async {
     final r = await _api.dio.get('/tasks', queryParameters: {'status': status});
-    return (r.data as List).map((j) => Task.fromJson(j)).toList();
+    final items = (r.data as List).map((j) => Task.fromJson(j)).toList();
+    await _cache.setTasks(status, items);
+    return items;
   }
 
   Future<void> complete(int id) => _api.dio.post('/tasks/$id/complete');

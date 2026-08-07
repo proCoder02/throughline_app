@@ -1,12 +1,18 @@
 import '../models/friend.dart';
 import 'api_client.dart';
+import 'local_cache.dart';
 
 class FriendService {
   final _api = ApiClient.instance;
+  final _cache = LocalCache.instance;
+
+  List<Friend>? listCached() => _cache.getFriends();
 
   Future<List<Friend>> list() async {
     final r = await _api.dio.get('/friends');
-    return (r.data as List).map((j) => Friend.fromJson(j)).toList();
+    final items = (r.data as List).map((j) => Friend.fromJson(j)).toList();
+    await _cache.setFriends(items);
+    return items;
   }
 
   Future<void> add(String friendCode) => _api.dio.post('/friends/add', data: {'friend_code': friendCode});

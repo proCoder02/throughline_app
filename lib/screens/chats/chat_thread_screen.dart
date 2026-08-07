@@ -8,16 +8,28 @@ import '../../state/listen_provider.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/blinking_dot.dart';
 import '../../widgets/chat_list_skeleton.dart';
+import '../../widgets/live_timer_text.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/pulsing_halo.dart';
 import '../../widgets/tag_chip.dart';
 import '../../widgets/typing_indicator.dart';
 
 class ChatThreadScreen extends StatefulWidget {
   final int conversationId;
 
-  const ChatThreadScreen({super.key, required this.conversationId});
+  /// True only when this screen is opening because Listen just started a
+  /// brand-new conversation -- there's nothing to fetch or wait for in that
+  /// case (a new live conversation starts with zero messages by
+  /// definition), so the screen can render fully instead of showing a
+  /// skeleton, same as an already-cached conversation does. The real
+  /// Conversation record (title, createdAt) still loads in the background
+  /// to fill in once available; only the artificial loading wait is skipped.
+  final bool isNewLiveConversation;
+
+  const ChatThreadScreen({super.key, required this.conversationId, this.isNewLiveConversation = false});
 
   @override
   State<ChatThreadScreen> createState() => _ChatThreadScreenState();
@@ -40,6 +52,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.isNewLiveConversation) _loading = false;
     _load();
     _promptController.addListener(_onPromptChanged);
   }
@@ -221,9 +234,13 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     context.watch<ThemeProvider>();
     final isLive = _isLive(listen);
 
-    if (_loading) {
-      return const Scaffold(body: MessageListSkeleton());
-    }
+    // Deliberately not an early "return Scaffold(body: MessageListSkeleton())"
+    // here -- that used to render a completely different, bare screen (no
+    // app bar, no bottom input bar) while _loading was true, so the instant
+    // it finished there was a jarring layout swap to the real screen. This
+    // way the app bar/bottom bar are part of the very first frame (matching
+    // how an already-cached conversation opens), and only the message list
+    // itself swaps from skeleton to real content in place.
     final title = _conversation?.displayTitle ?? (isLive ? 'New conversation' : 'Untitled conversation');
     return Scaffold(
       backgroundColor: AppColors.chatBg,
@@ -238,19 +255,8 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(title, overflow: TextOverflow.ellipsis),
-                  isLive
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const _PulsingDot(),
-                            const SizedBox(width: 6),
-                            Text(listen.status.isEmpty ? 'Listening' : listen.status,
-                                style: const TextStyle(fontSize: 12, color: AppColors.danger),
-                                overflow: TextOverflow.ellipsis),
-                          ],
-                        )
-                      : Text('Ask about this conversation',
-                          style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+                  Text('Ask about this conversation',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
                 ],
               ),
             ),
@@ -280,18 +286,20 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
             ),
           if (isLive && listen.pendingSpeakerIndex != null) _renamePanel(listen, listen.pendingSpeakerIndex!),
           Expanded(
-            child: _messages.isEmpty
-                ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _messages.length + (_sending ? 1 : 0),
-                    itemBuilder: (context, i) {
-                      if (i == _messages.length) return const TypingIndicator();
-                      final message = _messages[i];
-                      return MessageBubble(message: message, onReply: () => _startReply(message));
-                    },
-                  ),
+            child: _loading
+                ? const MessageListSkeleton()
+                : _messages.isEmpty
+                    ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: _messages.length + (_sending ? 1 : 0),
+                        itemBuilder: (context, i) {
+                          if (i == _messages.length) return const TypingIndicator();
+                          final message = _messages[i];
+                          return MessageBubble(message: message, onReply: () => _startReply(message));
+                        },
+                      ),
           ),
           if (isLive && listen.topics.isNotEmpty)
             Padding(
@@ -376,6 +384,29 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Same blinking-dot + live-timer readout as the Chats
+                      // screen's recording layout -- this is the button that
+                      // actually stops a live session from inside the
+                      // thread, so it gets the same unmistakable treatment,
+                      // not the plain static red circle it had before.
+                      if (isLive && !_hasText && listen.startedAt != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(color: AppColors.panel, borderRadius: BorderRadius.circular(16)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const BlinkingDot(color: AppColors.danger, radius: 4),
+                              const SizedBox(width: 6),
+                              LiveTimerText(
+                                startedAt: listen.startedAt!,
+                                style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       // Mic and send occupy the same slot, WhatsApp-style: the
                       // listen button is there by default, and morphs into
                       // send the moment there's text to send, morphing back
@@ -393,15 +424,29 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                                   onPressed: _sending ? null : () => _send(listen),
                                 ),
                               )
-                            : CircleAvatar(
-                                key: const ValueKey('mic'),
-                                backgroundColor: isLive ? AppColors.danger : AppColors.panel,
-                                child: IconButton(
-                                  icon: Icon(Icons.mic, color: isLive ? Colors.white : AppColors.accent, size: 20),
-                                  tooltip: isLive ? 'Stop listening' : 'Resume listening on this conversation',
-                                  onPressed: () => _toggleListen(listen),
-                                ),
-                              ),
+                            : isLive
+                                ? PulsingHalo(
+                                    key: const ValueKey('mic-live'),
+                                    active: true,
+                                    color: AppColors.danger,
+                                    child: CircleAvatar(
+                                      backgroundColor: AppColors.danger,
+                                      child: IconButton(
+                                        icon: const Icon(Icons.stop, color: Colors.white, size: 20),
+                                        tooltip: 'Stop listening',
+                                        onPressed: () => _toggleListen(listen),
+                                      ),
+                                    ),
+                                  )
+                                : CircleAvatar(
+                                    key: const ValueKey('mic-idle'),
+                                    backgroundColor: AppColors.panel,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.mic, color: AppColors.accent, size: 20),
+                                      tooltip: 'Resume listening on this conversation',
+                                      onPressed: () => _toggleListen(listen),
+                                    ),
+                                  ),
                       ),
                     ],
                   ),
@@ -463,32 +508,6 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _PulsingDot extends StatefulWidget {
-  const _PulsingDot();
-
-  @override
-  State<_PulsingDot> createState() => _PulsingDotState();
-}
-
-class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween(begin: 1.0, end: 0.3).animate(_controller),
-      child: const CircleAvatar(radius: 4, backgroundColor: AppColors.danger),
     );
   }
 }

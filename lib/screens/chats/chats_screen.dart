@@ -16,12 +16,16 @@ import '../../state/notify_provider.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/blinking_dot.dart';
 import '../../widgets/category_chip_bar.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
+import '../../widgets/live_timer_text.dart';
 import '../../widgets/mood_trend_card.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/pulsing_halo.dart';
+import '../../widgets/tap_bounce.dart';
 import 'chat_thread_screen.dart';
 import 'global_chat_screen.dart';
 
@@ -40,6 +44,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
   bool _offline = false;
   String? _category;
   String _search = '';
+
+  // True from the moment Listen is tapped (to start a new session) until
+  // either the live thread screen actually opens or starting it fails.
+  // ListenProvider.isListening flips true synchronously as soon as the mic
+  // starts, well before the backend confirms the session and this screen
+  // navigates away -- without this flag, this screen's own FAB would
+  // re-render into its red "recording" look for that whole gap, which is
+  // exactly the flash of a red icon that shows right before leaving this
+  // screen and serves no purpose here.
+  bool _startingListen = false;
 
   /// Backend full-text search results for the *current* [_search] query --
   /// additive on top of the always-on local title filter below: null until
@@ -119,6 +133,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   Future<void> _confirmDelete(Conversation c) async {
+    // Slidable's own auto-close animation was still running (it closes the
+    // swiped-open row the instant an action is tapped) right as the dialog's
+    // open animation started -- two animations competing for frames on the
+    // same tap read as laggy. Closing it instantly here removes the overlap.
+    Slidable.of(context)?.close(duration: Duration.zero);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -154,17 +173,44 @@ class _ChatsScreenState extends State<ChatsScreen> {
       _reload();
       return;
     }
+    setState(() => _startingListen = true);
     try {
       await listen.start(
         onSessionStarted: (id) {
           _reload();
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: id)),
-          );
+          // Resetting the flag here (before the push) still leaves it
+          // false for at least one frame that this screen itself paints
+          // before the new route visually covers it -- confirmed via
+          // logging: this screen rebuilt with the red "recording" layout
+          // twice right at this instant. Instead, reset it only once we're
+          // actually back on this screen (the pushed route popped) -- while
+          // ChatThreadScreen is on top, this screen's own look doesn't
+          // matter, and by the time it's visible again, isListening
+          // correctly reflects whatever the real state is by then.
+          //
+          // Same plain MaterialPageRoute every other "open this
+          // conversation" tap on this screen uses (see _ChatRow/
+          // _SearchResultRow onTap below) -- one consistent transition
+          // for every way of landing on a thread, not a special one just
+          // for this entry point.
+          Navigator.of(context)
+              .push(MaterialPageRoute(
+                builder: (_) => ChatThreadScreen(conversationId: id, isNewLiveConversation: true),
+              ))
+              .then((_) {
+            if (mounted) setState(() => _startingListen = false);
+          });
         },
       );
+      // start() can return without ever calling onSessionStarted (denied
+      // mic permission, missing auth token) -- if we're still not actually
+      // listening at this point, nothing else is coming to clear the flag.
+      if (mounted && !listen.isListening) {
+        setState(() => _startingListen = false);
+      }
     } catch (e) {
       if (mounted) {
+        setState(() => _startingListen = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not access microphone: $e')));
       }
     }
@@ -205,23 +251,94 @@ class _ChatsScreenState extends State<ChatsScreen> {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton.extended(
-            heroTag: 'chat',
-            tooltip: 'Ask about your people & conversations',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
+          TapBounce(
+            child: FloatingActionButton.extended(
+              heroTag: 'chat',
+              // Slightly translucent fill (icon/label stay fully opaque) so
+              // a conversation row scrolled underneath is still visible
+              // through/around the button instead of fully hidden behind it.
+              backgroundColor: AppColors.accent.withValues(alpha: 0.85),
+              tooltip: 'Ask about your people & conversations',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
+              ),
+              icon: const Icon(Icons.chat_bubble_outline),
+              label: const Text('Chat'),
             ),
-            icon: const Icon(Icons.chat_bubble_outline),
-            label: const Text('Chat'),
           ),
           const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'listen',
-            backgroundColor: listen.isListening ? AppColors.danger : null,
-            onPressed: () => _toggleListen(listen),
-            icon: Icon(listen.isListening ? Icons.stop : Icons.mic),
-            label: Text(listen.isListening ? 'Stop Listening' : 'Listen'),
-          ),
+          if (listen.isListening && !_startingListen && listen.startedAt != null)
+            // Recording layout, Telegram/WhatsApp voice-message style: a
+            // pill with a hard-blinking dot + live duration counter sits
+            // beside the button, which itself has morphed from the idle
+            // pill into a plain filled red circle with continuous outward
+            // sound-wave rings. Gated on !_startingListen so this screen's
+            // own button stays looking idle for the whole gap between
+            // tapping Listen and actually navigating to the live thread --
+            // otherwise it flashes into this look right before leaving,
+            // which serves no purpose here.
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Material(
+                  color: AppColors.panel,
+                  borderRadius: BorderRadius.circular(20),
+                  elevation: 2,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    // Same conversation, same transition as tapping it from
+                    // the list -- the timer is just another way to jump
+                    // straight into the live thread it's counting for.
+                    onTap: listen.conversationId == null
+                        ? null
+                        : () {
+                            notifyProvider.clearConversation(listen.conversationId!);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: listen.conversationId!)),
+                            );
+                          },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const BlinkingDot(color: AppColors.danger),
+                          const SizedBox(width: 8),
+                          LiveTimerText(
+                            startedAt: listen.startedAt!,
+                            style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                TapBounce(
+                  child: PulsingHalo(
+                    active: true,
+                    color: AppColors.danger,
+                    child: FloatingActionButton(
+                      heroTag: 'listen',
+                      backgroundColor: AppColors.danger.withValues(alpha: 0.85),
+                      shape: const CircleBorder(),
+                      onPressed: () => _toggleListen(listen),
+                      child: const Icon(Icons.stop, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            TapBounce(
+              child: FloatingActionButton.extended(
+                heroTag: 'listen',
+                backgroundColor: AppColors.accent.withValues(alpha: 0.85),
+                onPressed: () => _toggleListen(listen),
+                icon: const Icon(Icons.mic),
+                label: const Text('Listen'),
+              ),
+            ),
         ],
       ),
       body: Column(
