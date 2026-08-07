@@ -11,6 +11,7 @@ import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
+import '../../widgets/offline_banner.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -27,30 +28,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _personalization;
   String? _friendCode;
   bool _loading = true;
+  Object? _loadError;
+  bool _offline = false;
   Categories? _categories;
   String? _categoryError;
 
   @override
   void initState() {
     super.initState();
+    // Show the on-device copy instantly if there is one, then always refresh
+    // from the network in the background -- same cache-first pattern as
+    // ChatsScreen, so this tab still shows last-known settings offline
+    // instead of spinning forever if the request fails (the previous bug).
+    final cachedSettings = _service.getCached();
+    if (cachedSettings != null) {
+      _personalization = cachedSettings['personalization'];
+      _friendCode = cachedSettings['friend_code'];
+      _loading = false;
+    }
+    final cachedCategories = _categoryService.listCached();
+    if (cachedCategories != null) _categories = cachedCategories;
     _load();
     _loadCategories();
   }
 
   Future<void> _load() async {
-    final settings = await _service.get();
-    if (!mounted) return;
-    setState(() {
-      _personalization = settings['personalization'];
-      _friendCode = settings['friend_code'];
-      _loading = false;
-    });
+    try {
+      final settings = await _service.get();
+      if (!mounted) return;
+      setState(() {
+        _personalization = settings['personalization'];
+        _friendCode = settings['friend_code'];
+        _loading = false;
+        _loadError = null;
+        _offline = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _offline = true;
+        if (_friendCode == null) _loadError = e;
+      });
+    }
   }
 
   Future<void> _loadCategories() async {
-    final categories = await _categoryService.list();
-    if (!mounted) return;
-    setState(() => _categories = categories);
+    try {
+      final categories = await _categoryService.list();
+      if (!mounted) return;
+      setState(() => _categories = categories);
+    } catch (_) {
+      // Offline/unreachable -- keep showing whatever was cached above (or
+      // the kCategories fallback used in build() if there was none).
+    }
   }
 
   Future<void> _updatePersonalization(String mode) async {
@@ -104,9 +135,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(title: const Text('Settings')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
+          : _loadError != null
+              ? Center(child: Text('Failed to load settings: $_loadError'))
+              : ListView(
               padding: const EdgeInsets.all(12),
               children: [
+                if (_offline) const Padding(padding: EdgeInsets.only(bottom: 12), child: OfflineBanner()),
                 _SettingsCard(
                   children: [
                     Row(

@@ -17,6 +17,13 @@ class ProfileNote {
         conversationId: json['conversation_id'],
         category: json['category'] ?? 'personal',
       );
+
+  Map<String, dynamic> toJson() => {
+        'observation': observation,
+        'created_at': createdAt.toUtc().toIso8601String(),
+        'conversation_id': conversationId,
+        'category': category,
+      };
 }
 
 class Profile {
@@ -46,4 +53,14 @@ class Profile {
 
   static Map<String, Profile> mapFromJson(Map<String, dynamic> json) =>
       json.map((name, value) => MapEntry(name, Profile.fromJson(name, value)));
+
+  Map<String, dynamic> toJson() => {
+        'profile_id': profileId,
+        'categories': categories,
+        'last_seen': lastSeen.toUtc().toIso8601String(),
+        'notes': notes.map((n) => n.toJson()).toList(),
+      };
+
+  static Map<String, dynamic> mapToJson(Map<String, Profile> profiles) =>
+      profiles.map((name, p) => MapEntry(name, p.toJson()));
 }

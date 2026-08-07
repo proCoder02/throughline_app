@@ -2,8 +2,12 @@ import 'dart:convert';
 
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../models/category.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../models/friend.dart';
+import '../models/profile.dart';
+import '../models/task.dart';
 
 /// On-device mirror of the chat data the backend serves -- lets the chat
 /// screens render instantly from disk before the network round-trip
@@ -108,6 +112,58 @@ class LocalCache {
   String? getThemeMode() => _box.get('theme_mode');
 
   Future<void> setThemeMode(String mode) => _box.put('theme_mode', mode);
+
+  /// Keyed by status ("open"/"done"/"all") -- TasksScreen's filter switches
+  /// between them, and each is its own independent last-known snapshot.
+  List<Task>? getTasks(String status) {
+    final raw = _box.get('tasks:$status');
+    if (raw == null) return null;
+    return (jsonDecode(raw) as List).map((j) => Task.fromJson(j)).toList();
+  }
+
+  Future<void> setTasks(String status, List<Task> tasks) {
+    return _box.put('tasks:$status', jsonEncode(tasks.map((t) => t.toJson()).toList()));
+  }
+
+  Map<String, Profile>? getProfiles() {
+    final raw = _box.get('profiles');
+    if (raw == null) return null;
+    return Profile.mapFromJson(jsonDecode(raw));
+  }
+
+  Future<void> setProfiles(Map<String, Profile> profiles) {
+    return _box.put('profiles', jsonEncode(Profile.mapToJson(profiles)));
+  }
+
+  List<Friend>? getFriends() {
+    final raw = _box.get('friends');
+    if (raw == null) return null;
+    return (jsonDecode(raw) as List).map((j) => Friend.fromJson(j)).toList();
+  }
+
+  Future<void> setFriends(List<Friend> friends) {
+    return _box.put('friends', jsonEncode(friends.map((f) => f.toJson()).toList()));
+  }
+
+  Map<String, dynamic>? getSettings() {
+    final raw = _box.get('settings');
+    if (raw == null) return null;
+    return Map<String, dynamic>.from(jsonDecode(raw));
+  }
+
+  Future<void> setSettings(Map<String, dynamic> settings) {
+    return _box.put('settings', jsonEncode(settings));
+  }
+
+  Categories? getCategories() {
+    final raw = _box.get('categories');
+    if (raw == null) return null;
+    return Categories.fromJson(jsonDecode(raw));
+  }
+
+  Future<void> setCategories(Categories categories) {
+    return _box.put('categories', jsonEncode(categories.toJson()));
+  }
 
   /// Wipes every cached chat/conversation -- called on logout so a second
   /// account signing in on the same device never sees the previous

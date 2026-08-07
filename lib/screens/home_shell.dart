@@ -9,6 +9,7 @@ import '../services/push_service.dart';
 import '../state/notify_provider.dart';
 import '../state/theme_provider.dart';
 import '../widgets/call_overlay.dart';
+import '../widgets/island_nav_bar.dart';
 import 'chats/chat_thread_screen.dart';
 import 'chats/chats_screen.dart';
 import 'tasks/tasks_screen.dart';
@@ -198,8 +199,7 @@ class _HomeShellState extends State<HomeShell> {
                 _visited.contains(i) ? _builders[i](context) : const SizedBox.shrink(),
             ],
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
+          bottomNavigationBar: IslandNavBar(
             currentIndex: _index,
             onTap: (i) => setState(() {
               _index = i;
@@ -213,27 +213,26 @@ class _HomeShellState extends State<HomeShell> {
               if (i == 1) notifyProvider.clearTaskBadge();
             }),
             items: [
-              BottomNavigationBarItem(
-                icon: _badged(Icons.chat_bubble_outline, notify.unreadConversations.length),
+              IslandNavItem(
+                icon: Icons.chat_bubble_outline,
+                activeIcon: Icons.chat_bubble,
                 label: 'Chats',
+                badgeCount: notify.unreadConversations.length,
               ),
-              BottomNavigationBarItem(
-                icon: _badged(Icons.check_circle_outline, notify.taskBadge),
+              IslandNavItem(
+                icon: Icons.check_circle_outline,
+                activeIcon: Icons.check_circle,
                 label: 'Tasks',
+                badgeCount: notify.taskBadge,
               ),
-              const BottomNavigationBarItem(icon: Icon(Icons.people_outline), label: 'Profiles'),
-              const BottomNavigationBarItem(icon: Icon(Icons.group_outlined), label: 'Friends'),
-              const BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+              const IslandNavItem(icon: Icons.people_outline, activeIcon: Icons.people, label: 'Profiles'),
+              const IslandNavItem(icon: Icons.group_outlined, activeIcon: Icons.group, label: 'Friends'),
+              const IslandNavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Settings'),
             ],
           ),
         ),
         const CallOverlay(),
       ],
     );
-  }
-
-  Widget _badged(IconData icon, int count) {
-    if (count <= 0) return Icon(icon);
-    return Badge(label: Text('$count'), child: Icon(icon));
   }
 }

@@ -27,6 +27,15 @@ class Friend {
         lastCallOutgoing: json['last_call_outgoing'] as bool?,
         callCount: json['call_count'] ?? 0,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'username': username,
+        'nickname': nickname,
+        'last_call_at': lastCallAt?.toUtc().toIso8601String(),
+        'last_call_outgoing': lastCallOutgoing,
+        'call_count': callCount,
+      };
 }
 
 /// One entry in a friend's full call log (CallHistoryScreen) -- see

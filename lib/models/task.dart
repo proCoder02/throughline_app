@@ -40,4 +40,18 @@ class Task {
         createdAt: DateTime.parse(json['created_at']).toLocal(),
         category: json['category'] ?? 'personal',
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'conversation_id': conversationId,
+        'description': description,
+        'owner': owner,
+        'due_date': dueDate,
+        'reminder_at': reminderAt?.toUtc().toIso8601String(),
+        'reminder_sent': reminderSent,
+        'email_sent': emailSent,
+        'status': status,
+        'created_at': createdAt.toUtc().toIso8601String(),
+        'category': category,
+      };
 }

@@ -87,7 +87,8 @@
       "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $keys = @\\('DATABASE_URL','olama_api_key','OLLAMA_API_KEY','GROQ_API_KEY','DEEPGRAM_API_KEY','SMTP_PASSWORD','FLASK_SECRET_KEY','sarvam_api'\\); foreach \\($k in $keys\\) { $found = Select-String -Path .env -Pattern \"^$k=\" -Quiet; Write-Output \"$k present: $found\" }; \\(Get-Content .env | Measure-Object -Line\\).Lines)",
       "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); $first10 = $bytes[0..9] -join ' '; Write-Output \"first 10 bytes: $first10\"; $line1 = \\(Get-Content .env\\)[0]; Write-Output \"line 1 as read: $line1\")",
       "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); if \\($bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191\\) { $fixed = $bytes[3..\\($bytes.Length-1\\)]; [System.IO.File]::WriteAllBytes\\(\"$pwd\\\\.env\", $fixed\\); Write-Output \"BOM stripped, wrote $\\($fixed.Length\\) bytes \\(was $\\($bytes.Length\\)\\)\" } else { Write-Output \"no BOM found, nothing changed\" })",
-      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); Write-Output \"first 10 bytes: $\\($bytes[0..9] -join ' '\\)\"; Write-Output \"total bytes: $\\($bytes.Length\\)\"; Get-Content .env | Select-Object -First 3)"
+      "PowerShell(cd C:\\\\Users\\\\P3INW57\\\\Desktop\\\\speech2text; $bytes = [System.IO.File]::ReadAllBytes\\(\"$pwd\\\\.env\"\\); Write-Output \"first 10 bytes: $\\($bytes[0..9] -join ' '\\)\"; Write-Output \"total bytes: $\\($bytes.Length\\)\"; Get-Content .env | Select-Object -First 3)",
+      "PowerShell(flutter --version)"
     ],
     "additionalDirectories": [
       "C:\\Users\\P3INW57"
