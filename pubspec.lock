@@ -202,13 +202,13 @@ packages:
     source: hosted
     version: "0.7.14"
   device_info_plus:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: device_info_plus
-      sha256: b4fed1b2835da9d670d7bed7db79ae2a94b0f5ad6312268158a9b5479abbacdd
+      sha256: a7e611f8475a124caca8dac394c76c48218a244daa498c3584f97934267d1d4e
       url: "https://pub.dev"
     source: hosted
-    version: "12.4.0"
+    version: "12.0.0"
   device_info_plus_platform_interface:
     dependency: transitive
     description:
