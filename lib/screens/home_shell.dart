@@ -71,6 +71,11 @@ class _HomeShellState extends State<HomeShell> {
     // to clear it once the user answers natively.
     PushService.instance.onNativeRingStarted =
         notifyProvider.markNativelyRinging;
+    // Fed by MainActivity.kt's capturePendingTaskAction() when the engine is
+    // already running (app backgrounded, not killed) and the user taps
+    // SimpleNotificationHelper's task_created notification -- see
+    // consumePendingTaskAction() below for the cold-start counterpart.
+    PushService.instance.onTaskActionRequested = _openConversationForTaskAction;
     PushService.instance.listenForNativeCallAnswers();
 
     // Checked -- and, if it fires, acted on -- before the WS socket below is
@@ -85,6 +90,12 @@ class _HomeShellState extends State<HomeShell> {
     // call already answered.
     final pendingAnswer = await consumePendingCallAnswer();
     if (pendingAnswer != null) _joinNativelyAnsweredCall(pendingAnswer);
+
+    // Cold-start counterpart to onTaskActionRequested above -- the app was
+    // killed, so tapping the notification launched this Activity fresh
+    // rather than delivering onNewIntent to an already-running engine.
+    final pendingTaskAction = await consumePendingTaskAction();
+    if (pendingTaskAction != null) _openConversationForTaskAction(pendingTaskAction);
 
     // Connect the app-wide notify socket once, for as long as the user stays
     // in the authenticated area (this widget persists across tab switches).
@@ -131,6 +142,28 @@ class _HomeShellState extends State<HomeShell> {
       navigatorKey.currentState?.push(
         MaterialPageRoute(
             builder: (_) => ChatThreadScreen(conversationId: conversationId)),
+      );
+    });
+  }
+
+  /// From SimpleNotificationHelper's task_created notification (see
+  /// MainActivity.ACTION_TASK_OPEN/ACTION_TASK_ASK) -- "ask" distinguishes
+  /// its default tap (just open the conversation) from its "Ask" action
+  /// (open it AND auto-submit a question about the task).
+  void _openConversationForTaskAction(Map<String, dynamic> data) {
+    final conversationId = int.tryParse(data['conversation_id']?.toString() ?? '');
+    if (conversationId == null) return;
+    final ask = data['ask']?.toString() == 'true';
+    final description = data['task_description'] as String?;
+    notifyProvider.clearConversation(conversationId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => ChatThreadScreen(
+            conversationId: conversationId,
+            initialQuestion: (ask && description != null) ? 'What was said about: $description?' : null,
+          ),
+        ),
       );
     });
   }

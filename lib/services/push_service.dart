@@ -71,6 +71,12 @@ class PushService {
   /// socket about to independently receive the very same incoming_call.
   void Function(int callId)? onNativeRingStarted;
 
+  /// Fed by MainActivity.kt's capturePendingTaskAction() -- a tap on
+  /// SimpleNotificationHelper's task_created notification (its default tap
+  /// or its "Ask" action) while the Flutter engine is already running. data
+  /// carries conversation_id, task_description, and ask ("true"/"false").
+  void Function(Map<String, dynamic> data)? onTaskActionRequested;
+
   bool _callChannelHandlerAttached = false;
 
   /// Call once, as early as possible (before any call could plausibly come
@@ -88,6 +94,9 @@ class PushService {
           final data = Map<String, dynamic>.from(call.arguments as Map);
           final callId = int.tryParse(data['call_id']?.toString() ?? '');
           if (callId != null) onNativeRingStarted?.call(callId);
+          break;
+        case 'taskActionRequested':
+          onTaskActionRequested?.call(Map<String, dynamic>.from(call.arguments as Map));
           break;
       }
     });
@@ -287,11 +296,41 @@ Future<void> dismissNativeRinging(int callId) async {
 /// standard OS behavior, not something toggled server-side), so a
 /// foreground-only in-app SnackBar was the only heads-up a new task ever
 /// got. This is the actual visible banner instead.
-Future<void> showLocalNotification(String title, String body) async {
+///
+/// conversationId/description, when given (task_created only), make the
+/// notification deep-link to that conversation and add a distinct "Ask"
+/// action that opens it with the question already auto-submitted -- see
+/// SimpleNotificationHelper.kt/MainActivity.ACTION_TASK_ASK.
+Future<void> showLocalNotification(
+  String title,
+  String body, {
+  int? conversationId,
+  String? description,
+}) async {
   if (!Platform.isAndroid) return;
   try {
-    await _kCallChannel.invokeMethod('showLocalNotification', {'title': title, 'body': body});
+    await _kCallChannel.invokeMethod('showLocalNotification', {
+      'title': title,
+      'body': body,
+      'conversationId': conversationId?.toString(),
+      'description': description,
+    });
   } catch (_) {
     // Best-effort -- worst case this falls back to no visible heads-up at all.
+  }
+}
+
+/// Checks whether this cold start was launched by tapping
+/// SimpleNotificationHelper's task_created notification (default tap or its
+/// "Ask" action) -- see MainActivity.capturePendingTaskAction(). Read-once-
+/// and-clear, same pull pattern as consumePendingCallAnswer above.
+Future<Map<String, dynamic>?> consumePendingTaskAction() async {
+  if (!Platform.isAndroid) return null;
+  try {
+    final result = await _kCallChannel.invokeMethod('getPendingTaskAction');
+    if (result == null) return null;
+    return Map<String, dynamic>.from(result as Map);
+  } catch (_) {
+    return null;
   }
 }

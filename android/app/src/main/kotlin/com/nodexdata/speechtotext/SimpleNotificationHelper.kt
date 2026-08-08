@@ -20,6 +20,12 @@ private var notificationIdCounter = 1000
  * notify_provider.dart) is easy to miss if you're not looking at the screen
  * right then. This is a real system notification instead, posted directly
  * by app code rather than relying on FCM's foreground-invisible auto-display.
+ *
+ * task_created notifications additionally carry conversationId/taskDescription
+ * so tapping them opens that exact conversation (rather than just relaunching
+ * the app generically), and get a distinct "Ask" action that opens the same
+ * conversation and has Dart auto-submit a question about the task -- see
+ * MainActivity.ACTION_TASK_ASK.
  */
 object SimpleNotificationHelper {
 
@@ -35,24 +41,52 @@ object SimpleNotificationHelper {
         manager.createNotificationChannel(channel)
     }
 
-    fun show(context: Context, title: String, body: String) {
+    fun show(
+        context: Context,
+        title: String,
+        body: String,
+        conversationId: String? = null,
+        taskDescription: String? = null
+    ) {
         ensureChannel(context)
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-        }
         val id = notificationIdCounter++
-        val pendingIntent = PendingIntent.getActivity(
-            context, id, launchIntent,
+
+        fun buildIntent(action: String?): Intent {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            return Intent(launchIntent).apply {
+                if (action != null) this.action = action
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                if (conversationId != null) putExtra("conversation_id", conversationId)
+                if (taskDescription != null) putExtra("task_description", taskDescription)
+            }
+        }
+
+        val contentPendingIntent = PendingIntent.getActivity(
+            context, id, buildIntent(if (conversationId != null) MainActivity.ACTION_TASK_OPEN else null),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = Notification.Builder(context, CHANNEL_ID)
+
+        val builder = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(body)
             .setSmallIcon(context.applicationInfo.icon)
             .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
+            .setContentIntent(contentPendingIntent)
+
+        // Only a task_created notification carries a conversationId -- other
+        // callers of this same helper (general app updates) get the plain
+        // notification with no action, exactly as before.
+        if (conversationId != null) {
+            val askPendingIntent = PendingIntent.getActivity(
+                context, id + 1_000_000, buildIntent(MainActivity.ACTION_TASK_ASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                Notification.Action.Builder(context.applicationInfo.icon, "Ask", askPendingIntent).build()
+            )
+        }
+
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(id, notification)
+        manager.notify(id, builder.build())
     }
 }

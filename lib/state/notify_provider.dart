@@ -54,7 +54,17 @@ class NotifyProvider extends ChangeNotifier {
         // A real system notification, not the in-app SnackBar (see
         // ForegroundNotice) -- FCM's own foreground-invisible behavior meant
         // a new task while the app was open was too easy to miss entirely.
-        unawaited(showLocalNotification('New task', (event['description'] as String?) ?? 'untitled'));
+        // conversation_id/description ride along on this same WS event
+        // (unlike the other cases below, which only carry conversation_id),
+        // so the notification can deep-link straight to it and offer an
+        // "Ask" action that auto-submits a question about the task there.
+        final description = event['description'] as String?;
+        unawaited(showLocalNotification(
+          'New task',
+          description ?? 'untitled',
+          conversationId: event['conversation_id'] as int?,
+          description: description,
+        ));
         notifyListeners();
         break;
       case 'chat_message':

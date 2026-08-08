@@ -29,7 +29,18 @@ class ChatThreadScreen extends StatefulWidget {
   /// to fill in once available; only the artificial loading wait is skipped.
   final bool isNewLiveConversation;
 
-  const ChatThreadScreen({super.key, required this.conversationId, this.isNewLiveConversation = false});
+  /// Set when this screen opens from the task_created notification's "Ask"
+  /// action -- auto-submitted as a chat question the instant the screen is
+  /// ready, so tapping "Ask" goes straight to an answer instead of just
+  /// dropping the user into the conversation to type it themselves.
+  final String? initialQuestion;
+
+  const ChatThreadScreen({
+    super.key,
+    required this.conversationId,
+    this.isNewLiveConversation = false,
+    this.initialQuestion,
+  });
 
   @override
   State<ChatThreadScreen> createState() => _ChatThreadScreenState();
@@ -55,6 +66,13 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     if (widget.isNewLiveConversation) _loading = false;
     _load();
     _promptController.addListener(_onPromptChanged);
+    if (widget.initialQuestion != null) {
+      // Posted after the frame so this can't race the ListenProvider
+      // Provider not being attached to the tree yet on the very first build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _send(context.read<ListenProvider>(), widget.initialQuestion);
+      });
+    }
   }
 
   void _onPromptChanged() {
