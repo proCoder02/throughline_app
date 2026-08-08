@@ -16,6 +16,12 @@ class MainActivity : FlutterActivity() {
     companion object {
         const val CHANNEL = "com.nodexdata.speechtotext/call"
         const val ACTION_CALL_ANSWERED = "com.nodexdata.speechtotext.CALL_ANSWERED"
+        // Both come from SimpleNotificationHelper's task_created notification:
+        // OPEN is the notification's default tap (just view the conversation),
+        // ASK is its distinct "Ask" action (view the conversation AND have
+        // Dart auto-submit a question about the task).
+        const val ACTION_TASK_OPEN = "com.nodexdata.speechtotext.TASK_OPEN"
+        const val ACTION_TASK_ASK = "com.nodexdata.speechtotext.TASK_ASK"
     }
 
     // Set once by capturePendingCallAnswer(), read-and-cleared by Dart's
@@ -25,6 +31,11 @@ class MainActivity : FlutterActivity() {
     // used for the true cold-start case (channel below is still null);
     // see capturePendingCallAnswer().
     private var pendingCallAnswer: Map<String, String?>? = null
+
+    // Same pull-not-push pattern as pendingCallAnswer above, for
+    // ACTION_TASK_OPEN/ACTION_TASK_ASK -- "ask" distinguishes the
+    // notification's default tap from its "Ask" action.
+    private var pendingTaskAction: Map<String, String?>? = null
 
     // Non-null once configureFlutterEngine has run for this engine instance
     // (it lives for as long as the engine does, across any number of later
@@ -43,6 +54,7 @@ class MainActivity : FlutterActivity() {
         Log.d(TAG, "configureFlutterEngine: engine attaching, intent.action=${intent?.action}")
         registerPhoneAccount()
         capturePendingCallAnswer(intent)
+        capturePendingTaskAction(intent)
 
         val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel.setMethodCallHandler { call, result ->
@@ -69,6 +81,11 @@ class MainActivity : FlutterActivity() {
                     result.success(pendingCallAnswer)
                     pendingCallAnswer = null
                 }
+                "getPendingTaskAction" -> {
+                    Log.d(TAG, "getPendingTaskAction: returning $pendingTaskAction")
+                    result.success(pendingTaskAction)
+                    pendingTaskAction = null
+                }
                 "markCallFinished" -> {
                     val callId = call.argument<String>("call_id")
                     Log.d(TAG, "markCallFinished: callId=$callId")
@@ -78,7 +95,9 @@ class MainActivity : FlutterActivity() {
                 "showLocalNotification" -> {
                     val title = call.argument<String>("title") ?: ""
                     val body = call.argument<String>("body") ?: ""
-                    SimpleNotificationHelper.show(applicationContext, title, body)
+                    val conversationId = call.argument<String>("conversationId")
+                    val description = call.argument<String>("description")
+                    SimpleNotificationHelper.show(applicationContext, title, body, conversationId, description)
                     result.success(null)
                 }
                 "dismissNativeRinging" -> {
@@ -110,6 +129,7 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         Log.d(TAG, "onNewIntent: action=${intent.action}")
         capturePendingCallAnswer(intent)
+        capturePendingTaskAction(intent)
     }
 
     private fun capturePendingCallAnswer(intent: Intent?) {
@@ -131,6 +151,30 @@ class MainActivity : FlutterActivity() {
         } else {
             pendingCallAnswer = data
             Log.d(TAG, "capturePendingCallAnswer: stored for cold-start pull: $data")
+        }
+    }
+
+    /** Same push-if-running/pull-if-cold-start split as capturePendingCallAnswer,
+     * for a tap on SimpleNotificationHelper's task_created notification (either
+     * its default tap, ACTION_TASK_OPEN, or its "Ask" action, ACTION_TASK_ASK). */
+    private fun capturePendingTaskAction(intent: Intent?) {
+        val ask = when (intent?.action) {
+            ACTION_TASK_OPEN -> false
+            ACTION_TASK_ASK -> true
+            else -> return
+        }
+        val data = mapOf(
+            "conversation_id" to intent?.getStringExtra("conversation_id"),
+            "task_description" to intent?.getStringExtra("task_description"),
+            "ask" to ask.toString(),
+        )
+        val existingChannel = channel
+        if (existingChannel != null) {
+            Log.d(TAG, "capturePendingTaskAction: pushing directly to Dart (engine already running): $data")
+            existingChannel.invokeMethod("taskActionRequested", data)
+        } else {
+            pendingTaskAction = data
+            Log.d(TAG, "capturePendingTaskAction: stored for cold-start pull: $data")
         }
     }
 
