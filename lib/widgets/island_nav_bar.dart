@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -43,58 +45,84 @@ class IslandNavBar extends StatelessWidget {
   static const _pillWidth = 44.0;
   static const _pillHeight = 30.0;
 
+  // Exposed so screens with their own FloatingActionButton (e.g. ChatsScreen)
+  // can pad themselves clear of this bar -- necessary now that it's genuinely
+  // translucent (see the BackdropFilter below), which requires the Scaffold
+  // body behind it to extend under it (HomeShell's extendBody: true) rather
+  // than stop short, and that in turn makes a naive FAB think it owns the
+  // full screen height.
+  static const double barHeight = 68;
+  static const double bottomMargin = 12;
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Container(
-        height: 68,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.panel,
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isAppDarkMode ? 0.4 : 0.12),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final slotWidth = constraints.maxWidth / items.length;
-            return Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutCubic,
-                  top: 2,
-                  left: slotWidth * currentIndex + (slotWidth - _pillWidth) / 2,
-                  width: _pillWidth,
-                  height: _pillHeight,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppColors.railIconActive.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-                Row(
-                  children: [
-                    for (var i = 0; i < items.length; i++)
-                      Expanded(
-                        child: _IslandNavItemWidget(
-                          item: items[i],
-                          selected: i == currentIndex,
-                          onTap: () => onTap(i),
-                        ),
-                      ),
-                  ],
+      minimum: const EdgeInsets.fromLTRB(16, 0, 16, bottomMargin),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          // Real transparency -- a blurred hint of the conversation list (or
+          // whatever tab is behind it) shows through, matching WhatsApp/
+          // Telegram's translucent floating tab bar, rather than a flat
+          // opaque panel color sitting on top of the content.
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            height: barHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.panel
+                  .withValues(alpha: isAppDarkMode ? 0.22 : 0.3),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                  color: Colors.white
+                      .withValues(alpha: isAppDarkMode ? 0.1 : 0.45)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black
+                      .withValues(alpha: isAppDarkMode ? 0.4 : 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
                 ),
               ],
-            );
-          },
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final slotWidth = constraints.maxWidth / items.length;
+                return Stack(
+                  children: [
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOutCubic,
+                      top: 2,
+                      left: slotWidth * currentIndex +
+                          (slotWidth - _pillWidth) / 2,
+                      width: _pillWidth,
+                      height: _pillHeight,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color:
+                              AppColors.railIconActive.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        for (var i = 0; i < items.length; i++)
+                          Expanded(
+                            child: _IslandNavItemWidget(
+                              item: items[i],
+                              selected: i == currentIndex,
+                              onTap: () => onTap(i),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -115,7 +143,8 @@ class _IslandNavItemWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppColors.railIconActive : AppColors.railIcon;
-    final icon = Icon(selected ? (item.activeIcon ?? item.icon) : item.icon, color: color, size: 22);
+    final icon = Icon(selected ? (item.activeIcon ?? item.icon) : item.icon,
+        color: color, size: 22);
 
     return Semantics(
       selected: selected,
@@ -135,7 +164,8 @@ class _IslandNavItemWidget extends StatelessWidget {
                   duration: const Duration(milliseconds: 320),
                   curve: selected ? Curves.easeOutBack : Curves.easeOut,
                   tween: Tween(begin: 1.0, end: selected ? 1.12 : 1.0),
-                  builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+                  builder: (context, scale, child) =>
+                      Transform.scale(scale: scale, child: child),
                   child: item.badgeCount > 0
                       ? Badge(label: Text('${item.badgeCount}'), child: icon)
                       : icon,

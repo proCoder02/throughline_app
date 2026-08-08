@@ -69,7 +69,8 @@ class _HomeShellState extends State<HomeShell> {
     // independent WS/FCM-driven ringing screen for that call_id entirely
     // (see notify_provider.dart's guards), rather than showing it and racing
     // to clear it once the user answers natively.
-    PushService.instance.onNativeRingStarted = notifyProvider.markNativelyRinging;
+    PushService.instance.onNativeRingStarted =
+        notifyProvider.markNativelyRinging;
     PushService.instance.listenForNativeCallAnswers();
 
     // Checked -- and, if it fires, acted on -- before the WS socket below is
@@ -94,7 +95,8 @@ class _HomeShellState extends State<HomeShell> {
     // the WS socket above. onIncomingCallForeground reuses the exact same
     // overlay the WS 'incoming_call' case drives, so a call rings the same
     // way regardless of which channel got there first.
-    PushService.instance.onIncomingCallForeground = notifyProvider.handleIncomingCallPush;
+    PushService.instance.onIncomingCallForeground =
+        notifyProvider.handleIncomingCallPush;
     PushService.instance.onMessageTapped = (data) {
       switch (data['type']) {
         case 'incoming_call':
@@ -118,7 +120,8 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _openConversationFromPush(Map<String, dynamic> data) {
-    final conversationId = int.tryParse(data['conversation_id']?.toString() ?? '');
+    final conversationId =
+        int.tryParse(data['conversation_id']?.toString() ?? '');
     if (conversationId == null) return;
     notifyProvider.clearConversation(conversationId);
     // Posted after the frame so this can't race HomeShell's own first
@@ -126,7 +129,8 @@ class _HomeShellState extends State<HomeShell> {
     // Navigator under navigatorKey has attached its first route yet).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: conversationId)),
+        MaterialPageRoute(
+            builder: (_) => ChatThreadScreen(conversationId: conversationId)),
       );
     });
   }
@@ -181,7 +185,8 @@ class _HomeShellState extends State<HomeShell> {
             action: notice.conversationId != null
                 ? SnackBarAction(
                     label: 'View',
-                    onPressed: () => _openConversationFromPush({'conversation_id': notice.conversationId}),
+                    onPressed: () => _openConversationFromPush(
+                        {'conversation_id': notice.conversationId}),
                   )
                 : null,
           ),
@@ -192,11 +197,22 @@ class _HomeShellState extends State<HomeShell> {
     return Stack(
       children: [
         Scaffold(
+          // Needed now that IslandNavBar is genuinely translucent (real
+          // BackdropFilter transparency) -- without this, tab content stops
+          // short of the nav bar's reserved slot, so there'd be nothing
+          // behind it to blur/show through, just the plain scaffold
+          // background color. Screens with their own FloatingActionButton
+          // (ChatsScreen) compensate by padding themselves clear of
+          // IslandNavBar.barHeight so their FAB doesn't end up hidden
+          // behind it.
+          extendBody: true,
           body: IndexedStack(
             index: _index,
             children: [
               for (var i = 0; i < _builders.length; i++)
-                _visited.contains(i) ? _builders[i](context) : const SizedBox.shrink(),
+                _visited.contains(i)
+                    ? _builders[i](context)
+                    : const SizedBox.shrink(),
             ],
           ),
           bottomNavigationBar: IslandNavBar(
@@ -225,9 +241,18 @@ class _HomeShellState extends State<HomeShell> {
                 label: 'Tasks',
                 badgeCount: notify.taskBadge,
               ),
-              const IslandNavItem(icon: Icons.people_outline, activeIcon: Icons.people, label: 'Profiles'),
-              const IslandNavItem(icon: Icons.group_outlined, activeIcon: Icons.group, label: 'Friends'),
-              const IslandNavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Settings'),
+              const IslandNavItem(
+                  icon: Icons.people_outline,
+                  activeIcon: Icons.people,
+                  label: 'Profiles'),
+              const IslandNavItem(
+                  icon: Icons.group_outlined,
+                  activeIcon: Icons.group,
+                  label: 'Friends'),
+              const IslandNavItem(
+                  icon: Icons.settings_outlined,
+                  activeIcon: Icons.settings,
+                  label: 'Settings'),
             ],
           ),
         ),

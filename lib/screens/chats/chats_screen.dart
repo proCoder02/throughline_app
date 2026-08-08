@@ -21,6 +21,7 @@ import '../../widgets/category_chip_bar.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
+import '../../widgets/island_nav_bar.dart';
 import '../../widgets/live_timer_text.dart';
 import '../../widgets/mood_trend_card.dart';
 import '../../widgets/offline_banner.dart';
@@ -111,11 +112,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final query = value.trim();
     setState(() {
       _search = query.toLowerCase();
-      _searchResults = null; // stale results from a previous query no longer apply
+      _searchResults =
+          null; // stale results from a previous query no longer apply
     });
     _searchDebounce?.cancel();
     if (query.isEmpty) return;
-    _searchDebounce = Timer(const Duration(milliseconds: 400), () => _runBackendSearch(query));
+    _searchDebounce = Timer(
+        const Duration(milliseconds: 400), () => _runBackendSearch(query));
   }
 
   Future<void> _runBackendSearch(String query) async {
@@ -142,12 +145,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete conversation?'),
-        content: const Text('This deletes the conversation and its chat history. Tasks and profiles from it are kept.'),
+        content: const Text(
+            'This deletes the conversation and its chat history. Tasks and profiles from it are kept.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.danger)),
+            child:
+                const Text('Delete', style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -162,7 +169,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
       });
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete conversation')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete conversation')));
       }
     }
   }
@@ -195,8 +203,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
           // for this entry point.
           Navigator.of(context)
               .push(MaterialPageRoute(
-                builder: (_) => ChatThreadScreen(conversationId: id, isNewLiveConversation: true),
-              ))
+            builder: (_) => ChatThreadScreen(
+                conversationId: id, isNewLiveConversation: true),
+          ))
               .then((_) {
             if (mounted) setState(() => _startingListen = false);
           });
@@ -211,7 +220,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _startingListen = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not access microphone: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not access microphone: $e')));
       }
     }
   }
@@ -237,109 +247,132 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     hintText: 'Search',
                     prefixIcon: Icon(Icons.search),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(20))),
                   ),
                   onChanged: _onSearchChanged,
                 ),
               ),
-              CategoryChipBar(selected: _category, onChanged: (v) => setState(() => _category = v)),
+              CategoryChipBar(
+                  selected: _category,
+                  onChanged: (v) => setState(() => _category = v)),
               const SizedBox(height: 8),
             ],
           ),
         ),
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TapBounce(
-            child: FloatingActionButton.extended(
-              heroTag: 'chat',
-              // Slightly translucent fill (icon/label stay fully opaque) so
-              // a conversation row scrolled underneath is still visible
-              // through/around the button instead of fully hidden behind it.
-              backgroundColor: AppColors.accent.withValues(alpha: 0.85),
-              tooltip: 'Ask about your people & conversations',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
+      floatingActionButton: Padding(
+        // HomeShell's Scaffold now extends its body under the translucent
+        // IslandNavBar (needed for the bar's blur to have real content
+        // behind it) -- without this, this screen's own nested Scaffold
+        // would think it owns the full screen height and place the FAB
+        // right at the bottom, hidden behind the nav bar.
+        padding: const EdgeInsets.only(
+            bottom: IslandNavBar.barHeight + IslandNavBar.bottomMargin),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TapBounce(
+              child: FloatingActionButton.extended(
+                heroTag: 'chat',
+                // Slightly translucent fill (icon/label stay fully opaque) so
+                // a conversation row scrolled underneath is still visible
+                // through/around the button instead of fully hidden behind it.
+                backgroundColor: AppColors.accent.withValues(alpha: 0.85),
+                tooltip: 'Ask about your people & conversations',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
+                ),
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: const Text('Chat'),
               ),
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('Chat'),
             ),
-          ),
-          const SizedBox(height: 12),
-          if (listen.isListening && !_startingListen && listen.startedAt != null)
-            // Recording layout, Telegram/WhatsApp voice-message style: a
-            // pill with a hard-blinking dot + live duration counter sits
-            // beside the button, which itself has morphed from the idle
-            // pill into a plain filled red circle with continuous outward
-            // sound-wave rings. Gated on !_startingListen so this screen's
-            // own button stays looking idle for the whole gap between
-            // tapping Listen and actually navigating to the live thread --
-            // otherwise it flashes into this look right before leaving,
-            // which serves no purpose here.
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Material(
-                  color: AppColors.panel,
-                  borderRadius: BorderRadius.circular(20),
-                  elevation: 2,
-                  child: InkWell(
+            const SizedBox(height: 12),
+            if (listen.isListening &&
+                !_startingListen &&
+                listen.startedAt != null)
+              // Recording layout, Telegram/WhatsApp voice-message style: a
+              // pill with a hard-blinking dot + live duration counter sits
+              // beside the button, which itself has morphed from the idle
+              // pill into a plain filled red circle with continuous outward
+              // sound-wave rings. Gated on !_startingListen so this screen's
+              // own button stays looking idle for the whole gap between
+              // tapping Listen and actually navigating to the live thread --
+              // otherwise it flashes into this look right before leaving,
+              // which serves no purpose here.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Material(
+                    color: AppColors.panel,
                     borderRadius: BorderRadius.circular(20),
-                    // Same conversation, same transition as tapping it from
-                    // the list -- the timer is just another way to jump
-                    // straight into the live thread it's counting for.
-                    onTap: listen.conversationId == null
-                        ? null
-                        : () {
-                            notifyProvider.clearConversation(listen.conversationId!);
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: listen.conversationId!)),
-                            );
-                          },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const BlinkingDot(color: AppColors.danger),
-                          const SizedBox(width: 8),
-                          LiveTimerText(
-                            startedAt: listen.startedAt!,
-                            style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 13),
-                          ),
-                        ],
+                    elevation: 2,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      // Same conversation, same transition as tapping it from
+                      // the list -- the timer is just another way to jump
+                      // straight into the live thread it's counting for.
+                      onTap: listen.conversationId == null
+                          ? null
+                          : () {
+                              notifyProvider
+                                  .clearConversation(listen.conversationId!);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => ChatThreadScreen(
+                                        conversationId:
+                                            listen.conversationId!)),
+                              );
+                            },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const BlinkingDot(color: AppColors.danger),
+                            const SizedBox(width: 8),
+                            LiveTimerText(
+                              startedAt: listen.startedAt!,
+                              style: const TextStyle(
+                                  color: AppColors.danger,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                TapBounce(
-                  child: PulsingHalo(
-                    active: true,
-                    color: AppColors.danger,
-                    child: FloatingActionButton(
-                      heroTag: 'listen',
-                      backgroundColor: AppColors.danger.withValues(alpha: 0.85),
-                      shape: const CircleBorder(),
-                      onPressed: () => _toggleListen(listen),
-                      child: const Icon(Icons.stop, color: Colors.white),
+                  const SizedBox(width: 10),
+                  TapBounce(
+                    child: PulsingHalo(
+                      active: true,
+                      color: AppColors.danger,
+                      child: FloatingActionButton(
+                        heroTag: 'listen',
+                        backgroundColor:
+                            AppColors.danger.withValues(alpha: 0.85),
+                        shape: const CircleBorder(),
+                        onPressed: () => _toggleListen(listen),
+                        child: const Icon(Icons.stop, color: Colors.white),
+                      ),
                     ),
                   ),
+                ],
+              )
+            else
+              TapBounce(
+                child: FloatingActionButton.extended(
+                  heroTag: 'listen',
+                  backgroundColor: AppColors.accent.withValues(alpha: 0.85),
+                  onPressed: () => _toggleListen(listen),
+                  icon: const Icon(Icons.mic),
+                  label: const Text('Listen'),
                 ),
-              ],
-            )
-          else
-            TapBounce(
-              child: FloatingActionButton.extended(
-                heroTag: 'listen',
-                backgroundColor: AppColors.accent.withValues(alpha: 0.85),
-                onPressed: () => _toggleListen(listen),
-                icon: const Icon(Icons.mic),
-                label: const Text('Listen'),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
       body: Column(
         children: [
@@ -368,18 +401,21 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (_search.isNotEmpty && _searchResults != null) {
       final results = _searchResults!;
       if (results.isEmpty) {
-        return const EmptyState(icon: Icons.search_off, title: 'No matches found');
+        return const EmptyState(
+            icon: Icons.search_off, title: 'No matches found');
       }
       return ListView.separated(
         itemCount: results.length,
-        separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
+        separatorBuilder: (_, __) =>
+            Divider(height: 1, color: AppColors.border, indent: 78),
         itemBuilder: (context, i) {
           final r = results[i];
           return _SearchResultRow(
             result: r,
             onTap: () {
               notifyProvider.clearConversation(r.id);
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: r.id)));
+              Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ChatThreadScreen(conversationId: r.id)));
             },
           );
         },
@@ -387,9 +423,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
 
     var items = _conversations!;
-    if (_category != null) items = items.where((c) => c.category == _category).toList();
+    if (_category != null)
+      items = items.where((c) => c.category == _category).toList();
     if (_search.isNotEmpty) {
-      items = items.where((c) => c.displayTitle.toLowerCase().contains(_search)).toList();
+      items = items
+          .where((c) => c.displayTitle.toLowerCase().contains(_search))
+          .toList();
     }
     if (items.isEmpty) {
       return _search.isNotEmpty
@@ -397,12 +436,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
           : const EmptyState(
               icon: Icons.chat_bubble_outline,
               title: 'No conversations yet',
-              subtitle: 'Start a live listen session or make a call to get started.',
+              subtitle:
+                  'Start a live listen session or make a call to get started.',
             );
     }
     return ListView.separated(
       itemCount: items.length,
-      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
+      separatorBuilder: (_, __) =>
+          Divider(height: 1, color: AppColors.border, indent: 78),
       itemBuilder: (context, i) {
         final c = items[i];
         final unread = notify.unreadConversations.contains(c.id);
@@ -429,7 +470,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
               unread: unread,
               onTap: () {
                 notifyProvider.clearConversation(c.id);
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: c.id)));
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => ChatThreadScreen(conversationId: c.id)));
               },
             ),
           ),
@@ -448,12 +490,15 @@ class _ChatRow extends StatelessWidget {
   final bool unread;
   final VoidCallback onTap;
 
-  const _ChatRow({required this.conversation, required this.unread, required this.onTap});
+  const _ChatRow(
+      {required this.conversation, required this.unread, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final category = conversation.category;
-    final categoryLabel = category.isEmpty ? '' : category[0].toUpperCase() + category.substring(1);
+    final categoryLabel = category.isEmpty
+        ? ''
+        : category[0].toUpperCase() + category.substring(1);
     return Material(
       color: AppColors.panel,
       child: InkWell(
@@ -477,7 +522,8 @@ class _ChatRow extends StatelessWidget {
                             conversation.displayTitle,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+                              fontWeight:
+                                  unread ? FontWeight.w700 : FontWeight.w600,
                               color: AppColors.text,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -485,11 +531,14 @@ class _ChatRow extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          DateFormat('MMM d, HH:mm').format(conversation.createdAt),
+                          DateFormat('MMM d, HH:mm')
+                              .format(conversation.createdAt),
                           style: TextStyle(
                             fontSize: 12,
-                            color: unread ? AppColors.accent : AppColors.textSoft,
-                            fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
+                            color:
+                                unread ? AppColors.accent : AppColors.textSoft,
+                            fontWeight:
+                                unread ? FontWeight.w600 : FontWeight.normal,
                           ),
                         ),
                       ],
@@ -500,7 +549,8 @@ class _ChatRow extends StatelessWidget {
                         Expanded(
                           child: Text(
                             categoryLabel,
-                            style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                            style: TextStyle(
+                                fontSize: 13.5, color: AppColors.textSoft),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -509,7 +559,9 @@ class _ChatRow extends StatelessWidget {
                             width: 9,
                             height: 9,
                             margin: const EdgeInsets.only(left: 8),
-                            decoration: const BoxDecoration(color: AppColors.unreadBadge, shape: BoxShape.circle),
+                            decoration: const BoxDecoration(
+                                color: AppColors.unreadBadge,
+                                shape: BoxShape.circle),
                           ),
                       ],
                     ),
@@ -555,21 +607,26 @@ class _SearchResultRow extends StatelessWidget {
                         Expanded(
                           child: Text(
                             result.displayTitle,
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.text),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           DateFormat('MMM d, HH:mm').format(result.createdAt),
-                          style: TextStyle(fontSize: 12, color: AppColors.textSoft),
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textSoft),
                         ),
                       ],
                     ),
                     const SizedBox(height: 3),
                     Text.rich(
                       TextSpan(
-                        style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
+                        style: TextStyle(
+                            fontSize: 13.5, color: AppColors.textSoft),
                         children: _parseSnippetSpans(result.snippet),
                       ),
                       maxLines: 2,
@@ -595,8 +652,11 @@ List<TextSpan> _parseSnippetSpans(String snippet) {
   final spans = <TextSpan>[];
   var last = 0;
   for (final match in _snippetBoldTag.allMatches(snippet)) {
-    if (match.start > last) spans.add(TextSpan(text: snippet.substring(last, match.start)));
-    spans.add(TextSpan(text: match.group(1), style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.text)));
+    if (match.start > last)
+      spans.add(TextSpan(text: snippet.substring(last, match.start)));
+    spans.add(TextSpan(
+        text: match.group(1),
+        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.text)));
     last = match.end;
   }
   if (last < snippet.length) spans.add(TextSpan(text: snippet.substring(last)));
