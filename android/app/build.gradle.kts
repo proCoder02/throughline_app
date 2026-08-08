@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
@@ -8,7 +9,10 @@ plugins {
 android {
     namespace = "com.nodexdata.speechtotext"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Pinned above flutter.ndkVersion default: several plugins (livekit_client,
+    // flutter_webrtc, firebase_*, etc.) require 28.2.13676358; NDK is backward
+    // compatible so this satisfies all of them.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
