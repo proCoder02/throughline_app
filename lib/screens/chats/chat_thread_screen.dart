@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,6 +12,7 @@ import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/blinking_dot.dart';
 import '../../widgets/chat_list_skeleton.dart';
+import '../../widgets/fade_slide_in.dart';
 import '../../widgets/live_timer_text.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/offline_banner.dart';
@@ -287,70 +290,138 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       body: Column(
         children: [
           if (_offline) const OfflineBanner(),
-          if (isLive && listen.seenIndices.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: listen.seenIndices
-                    .map((idx) => Chip(
-                          label: Text(listen.speakerNames[idx] ?? 'Speaker $idx'),
-                          deleteIcon: const Icon(Icons.edit, size: 16),
-                          onDeleted: () => listen.openPrompt(idx),
-                        ))
-                    .toList(),
-              ),
-            ),
-          if (isLive && listen.pendingSpeakerIndex != null) _renamePanel(listen, listen.pendingSpeakerIndex!),
           Expanded(
-            child: _loading
-                ? const MessageListSkeleton()
-                : _messages.isEmpty
-                    ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: _messages.length + (_sending ? 1 : 0),
-                        itemBuilder: (context, i) {
-                          if (i == _messages.length) return const TypingIndicator();
-                          final message = _messages[i];
-                          return MessageBubble(message: message, onReply: () => _startReply(message));
-                        },
-                      ),
+            child: Stack(
+              children: [
+                // Base layer: the message list now fills the FULL remaining
+                // height (not squeezed by the chip rows/rename panel sized
+                // out of a Column above/below it) -- that's what makes the
+                // chips' transparency actually show real message content
+                // through them, instead of just the plain screen
+                // background that used to sit behind their old, separate
+                // slice of the Column.
+                Positioned.fill(
+                  child: _loading
+                      ? const MessageListSkeleton()
+                      : _messages.isEmpty
+                          ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: _messages.length + (_sending ? 1 : 0),
+                              itemBuilder: (context, i) {
+                                if (i == _messages.length) return const TypingIndicator();
+                                final message = _messages[i];
+                                return MessageBubble(message: message, onReply: () => _startReply(message));
+                              },
+                            ),
+                ),
+                // Top overlay: speaker chips + rename prompt -- these are
+                // about identifying who's talking, so they stay anchored
+                // near the top where a new speaker first appears.
+                if (isLive && (listen.seenIndices.isNotEmpty || listen.pendingSpeakerIndex != null))
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (listen.seenIndices.isNotEmpty)
+                          SizedBox(
+                            height: 44,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              itemCount: listen.seenIndices.length,
+                              separatorBuilder: (_, __) => const SizedBox(width: 8),
+                              itemBuilder: (context, i) {
+                                final idx = listen.seenIndices[i];
+                                return FadeSlideIn(
+                                  index: i,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                      child: Chip(
+                                        backgroundColor: AppColors.panel.withValues(alpha: 0.12),
+                                        side: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
+                                        label: Text(listen.speakerNames[idx] ?? 'Speaker $idx'),
+                                        deleteIcon: const Icon(Icons.edit, size: 16),
+                                        onDeleted: () => listen.openPrompt(idx),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        if (listen.pendingSpeakerIndex != null) _renamePanel(listen, listen.pendingSpeakerIndex!),
+                      ],
+                    ),
+                  ),
+                // Bottom overlay: topics + questions -- these are "ask
+                // about this" suggestions, so they float just above the
+                // compose bar, matching where Gmail/Messenger place this
+                // exact kind of suggestion-chip strip, not at the top.
+                if (isLive && (listen.topics.isNotEmpty || listen.questions.isNotEmpty))
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (listen.topics.isNotEmpty)
+                          SizedBox(
+                            height: 40,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+                              itemCount: listen.topics.length,
+                              separatorBuilder: (_, __) => const SizedBox(width: 8),
+                              itemBuilder: (context, i) {
+                                final t = listen.topics[i];
+                                return FadeSlideIn(
+                                  index: i,
+                                  child: TagChip(
+                                    label: t,
+                                    onTap: () => _tapTopic(listen, t),
+                                    onDismiss: () => listen.removeTopic(t),
+                                    backgroundColor: AppColors.accent.withValues(alpha: 0.12),
+                                    borderColor: AppColors.accent.withValues(alpha: 0.35),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        if (listen.questions.isNotEmpty)
+                          SizedBox(
+                            height: 40,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                              itemCount: listen.questions.length,
+                              separatorBuilder: (_, __) => const SizedBox(width: 8),
+                              itemBuilder: (context, i) {
+                                final q = listen.questions[i];
+                                return FadeSlideIn(
+                                  index: i,
+                                  child: TagChip(
+                                    label: q,
+                                    onTap: () => _tapQuestion(listen, q),
+                                    onDismiss: () => listen.removeQuestion(q),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
-          if (isLive && listen.topics.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: listen.topics
-                    .map((t) => TagChip(
-                          label: t,
-                          onTap: () => _tapTopic(listen, t),
-                          onDismiss: () => listen.removeTopic(t),
-                          backgroundColor: AppColors.accent.withValues(alpha: 0.08),
-                          borderColor: AppColors.accent.withValues(alpha: 0.35),
-                        ))
-                    .toList(),
-              ),
-            ),
-          if (isLive && listen.questions.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: listen.questions
-                    .map((q) => TagChip(
-                          label: q,
-                          onTap: () => _tapQuestion(listen, q),
-                          onDismiss: () => listen.removeQuestion(q),
-                        ))
-                    .toList(),
-              ),
-            ),
           SafeArea(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -478,53 +549,78 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   }
 
   Widget _renamePanel(ListenProvider listen, int idx) {
+    // Frosted glass, not a flat panel color -- this floats directly over
+    // the message list (it's not a modal/dialog, just an inline prompt), so
+    // a fully opaque background was blocking whatever conversation content
+    // sat behind it. Same BackdropFilter-blur-plus-low-alpha-tint technique
+    // as IslandNavBar, so a blurred hint of the messages behind it stays
+    // visible instead of being fully hidden.
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('Speaker $idx — who is this?', style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          if (listen.knownSpeakers.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: listen.knownSpeakers
-                  .map((s) => ActionChip(label: Text(s.name), onPressed: () => listen.nameSpeaker(idx, s.name)))
-                  .toList(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.panel.withValues(alpha: isAppDarkMode ? 0.55 : 0.7),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: isAppDarkMode ? 0.1 : 0.4)),
             ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _renameController,
-                  decoration: const InputDecoration(hintText: 'Or type a new name', isDense: true),
-                  onSubmitted: (v) {
-                    listen.nameSpeaker(idx, v);
-                    _renameController.clear();
-                  },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Speaker $idx — who is this?', style: const TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                // Fixed-height horizontal scroll, not a Wrap --
+                // listen.knownSpeakers is every speaker named across all
+                // conversations, which can run to several rows on a Wrap and
+                // was the main contributor to a real overflow seen when this
+                // panel was open at the same time as the keyboard (the
+                // rename text field below grabs focus immediately).
+                if (listen.knownSpeakers.isNotEmpty)
+                  SizedBox(
+                    height: 36,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: listen.knownSpeakers.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, i) {
+                        final s = listen.knownSpeakers[i];
+                        return ActionChip(label: Text(s.name), onPressed: () => listen.nameSpeaker(idx, s.name));
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _renameController,
+                        decoration: const InputDecoration(hintText: 'Or type a new name', isDense: true),
+                        onSubmitted: (v) {
+                          listen.nameSpeaker(idx, v);
+                          _renameController.clear();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(onPressed: listen.dismissPrompt, child: const Text('Skip')),
+                    ElevatedButton(
+                      onPressed: () {
+                        listen.nameSpeaker(idx, _renameController.text);
+                        _renameController.clear();
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              TextButton(onPressed: listen.dismissPrompt, child: const Text('Skip')),
-              ElevatedButton(
-                onPressed: () {
-                  listen.nameSpeaker(idx, _renameController.text);
-                  _renameController.clear();
-                },
-                child: const Text('Save'),
-              ),
-            ],
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
