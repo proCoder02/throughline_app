@@ -155,6 +155,16 @@ class LocalCache {
     return _box.put('settings', jsonEncode(settings));
   }
 
+  Map<String, dynamic>? getNudgeSettings() {
+    final raw = _box.get('nudge_settings');
+    if (raw == null) return null;
+    return Map<String, dynamic>.from(jsonDecode(raw));
+  }
+
+  Future<void> setNudgeSettings(Map<String, dynamic> settings) {
+    return _box.put('nudge_settings', jsonEncode(settings));
+  }
+
   Categories? getCategories() {
     final raw = _box.get('categories');
     if (raw == null) return null;

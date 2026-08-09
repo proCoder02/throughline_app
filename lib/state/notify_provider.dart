@@ -140,6 +140,19 @@ class NotifyProvider extends ChangeNotifier {
           callProvider.handleRemoteDecline(id);
         }
         break;
+      case 'setting_toggled':
+        // FCM's own foreground-invisible behavior (see the task_created
+        // case above) means the send_fcm_to_user call app.py's
+        // update_nudge_settings also makes would silently not show while
+        // the app is open -- exactly when someone is toggling a setting.
+        // This WS-driven local notification is what actually shows it.
+        final feature = event['feature'] as String?;
+        final enabled = event['enabled'] as bool?;
+        if (feature != null && enabled != null) {
+          final state = enabled ? 'on' : 'off';
+          unawaited(showLocalNotification('Setting updated', "You've turned $state $feature."));
+        }
+        break;
     }
   }
 

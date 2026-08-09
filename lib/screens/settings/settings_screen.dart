@@ -11,6 +11,7 @@ import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
+import '../../widgets/island_nav_bar.dart';
 import '../../widgets/offline_banner.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -33,6 +34,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Categories? _categories;
   String? _categoryError;
 
+  // Default to true (matches the backend's own default-on behavior for a
+  // user who has never touched nudges.user_settings -- see
+  // nudge_engine.get_user_settings) so this card doesn't need its own
+  // separate loading spinner; cache/network just override these once they
+  // resolve.
+  bool _nudgesEnabled = true;
+  bool _cognitiveIntelligenceEnabled = true;
+  bool _taskReminderNotificationsEnabled = true;
+  bool _tagsQuestionsEnabled = true;
+
+  /// Its own independently stored value (nudges.user_settings.smart_features_enabled),
+  /// NOT derived from the four fields above. Toggling this master switch
+  /// cascades DOWN and sets all four together -- but turning an individual
+  /// feature off afterward does NOT cascade back up and flip this one off;
+  /// it keeps reading as on until explicitly toggled again. See app.py's
+  /// update_nudge_settings for the matching server-side logic.
+  bool _smartFeaturesEnabled = true;
+
   @override
   void initState() {
     super.initState();
@@ -48,8 +67,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     final cachedCategories = _categoryService.listCached();
     if (cachedCategories != null) _categories = cachedCategories;
+    final cachedNudgeSettings = _service.getCachedNudgeSettings();
+    if (cachedNudgeSettings != null) {
+      _nudgesEnabled = cachedNudgeSettings['nudges_enabled'] ?? true;
+      _cognitiveIntelligenceEnabled = cachedNudgeSettings['cognitive_intelligence_enabled'] ?? true;
+      _taskReminderNotificationsEnabled = cachedNudgeSettings['task_reminder_notifications_enabled'] ?? true;
+      _tagsQuestionsEnabled = cachedNudgeSettings['tags_questions_enabled'] ?? true;
+      _smartFeaturesEnabled = cachedNudgeSettings['smart_features_enabled'] ?? true;
+    }
     _load();
     _loadCategories();
+    _loadNudgeSettings();
   }
 
   Future<void> _load() async {
@@ -87,6 +115,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _updatePersonalization(String mode) async {
     setState(() => _personalization = mode);
     await _service.update(mode);
+  }
+
+  Future<void> _loadNudgeSettings() async {
+    try {
+      final settings = await _service.getNudgeSettings();
+      if (!mounted) return;
+      setState(() {
+        _nudgesEnabled = settings['nudges_enabled'] ?? true;
+        _cognitiveIntelligenceEnabled = settings['cognitive_intelligence_enabled'] ?? true;
+        _taskReminderNotificationsEnabled = settings['task_reminder_notifications_enabled'] ?? true;
+        _tagsQuestionsEnabled = settings['tags_questions_enabled'] ?? true;
+        _smartFeaturesEnabled = settings['smart_features_enabled'] ?? true;
+      });
+    } catch (_) {
+      // Offline/unreachable -- keep showing the cached or default value above.
+    }
+  }
+
+  Future<void> _updateSmartFeatures(bool value) async {
+    setState(() {
+      _smartFeaturesEnabled = value;
+      _nudgesEnabled = value;
+      _cognitiveIntelligenceEnabled = value;
+      _taskReminderNotificationsEnabled = value;
+      _tagsQuestionsEnabled = value;
+    });
+    await _service.updateSmartFeatures(value);
+  }
+
+  Future<void> _updateNudgesEnabled(bool value) async {
+    setState(() => _nudgesEnabled = value);
+    await _service.updateNudgeSettings(nudgesEnabled: value);
+  }
+
+  Future<void> _updateCognitiveIntelligenceEnabled(bool value) async {
+    setState(() => _cognitiveIntelligenceEnabled = value);
+    await _service.updateNudgeSettings(cognitiveIntelligenceEnabled: value);
+  }
+
+  Future<void> _updateTaskReminderNotificationsEnabled(bool value) async {
+    setState(() => _taskReminderNotificationsEnabled = value);
+    await _service.updateNudgeSettings(taskReminderNotificationsEnabled: value);
+  }
+
+  Future<void> _updateTagsQuestionsEnabled(bool value) async {
+    setState(() => _tagsQuestionsEnabled = value);
+    await _service.updateNudgeSettings(tagsQuestionsEnabled: value);
   }
 
   Future<void> _addCategory() async {
@@ -138,7 +213,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : _loadError != null
               ? Center(child: Text('Failed to load settings: $_loadError'))
               : ListView(
-              padding: const EdgeInsets.all(12),
+              // HomeShell's Scaffold extends its body under the translucent
+              // IslandNavBar (needed for the bar's blur to have real content
+              // behind it) -- without accounting for that here, the last
+              // item (Log out) ends up hidden behind the floating nav bar,
+              // same class of bug already fixed for ChatsScreen's FAB.
+              padding: const EdgeInsets.fromLTRB(
+                  12, 12, 12, 12 + IslandNavBar.barHeight + IslandNavBar.bottomMargin),
               children: [
                 if (_offline) const Padding(padding: EdgeInsets.only(bottom: 12), child: OfflineBanner()),
                 _SettingsCard(
@@ -191,6 +272,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       )
                       .toList(),
+                ),
+                _SettingsCard(
+                  // No title/subtitle here -- the parent switch below IS the
+                  // header. Giving the card its own "Smart features" text on
+                  // top of the switch's own title was the duplicate.
+                  children: [
+                    _SmartFeatureParentTile(
+                      title: 'Smart features',
+                      subtitle: _smartFeaturesEnabled
+                          ? 'Turns everything below on or off together.'
+                          : 'Turn on to customize the individual features below.',
+                      value: _smartFeaturesEnabled,
+                      onChanged: _updateSmartFeatures,
+                    ),
+                    _SmartFeatureGroup(
+                      children: [
+                        _SmartFeatureChildTile(
+                          title: 'Nudges',
+                          subtitle: 'Overdue tasks, mood shifts, and friends you haven\'t talked to in a while.',
+                          value: _nudgesEnabled,
+                          enabled: _smartFeaturesEnabled,
+                          onChanged: _updateNudgesEnabled,
+                        ),
+                        _SmartFeatureChildTile(
+                          title: 'Cognitive intelligence',
+                          subtitle: 'Learns from your conversations to give more personalized replies.',
+                          value: _cognitiveIntelligenceEnabled,
+                          enabled: _smartFeaturesEnabled,
+                          onChanged: _updateCognitiveIntelligenceEnabled,
+                        ),
+                        _SmartFeatureChildTile(
+                          title: 'Task reminder notifications',
+                          subtitle: 'Email and push reminders when a task\'s reminder time arrives.',
+                          value: _taskReminderNotificationsEnabled,
+                          enabled: _smartFeaturesEnabled,
+                          onChanged: _updateTaskReminderNotificationsEnabled,
+                        ),
+                        _SmartFeatureChildTile(
+                          title: 'Tags & questions',
+                          subtitle: 'Suggested topic tags and follow-up questions during live conversations.',
+                          value: _tagsQuestionsEnabled,
+                          enabled: _smartFeaturesEnabled,
+                          onChanged: _updateTagsQuestionsEnabled,
+                          isLast: true,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
                 _SettingsCard(
                   title: 'Your categories',
@@ -312,6 +441,109 @@ class _SettingsCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The "Smart features" master row -- an icon badge + bold title makes it
+/// read as the header for the group below rather than just another switch,
+/// without needing a separate duplicate title above it.
+class _SmartFeatureParentTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SmartFeatureParentTile({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      activeThumbColor: AppColors.accent,
+      secondary: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: AppColors.accent.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(Icons.auto_awesome_rounded, color: AppColors.accent, size: 20),
+      ),
+      title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+      subtitle: Text(subtitle, style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+}
+
+/// Visually nests its children under the parent switch above: indented,
+/// with a left "rail" connecting them back to it -- the same tree
+/// convention used in Notion/Linear-style settings for "this group is
+/// governed by that switch," without needing extra explanatory copy.
+class _SmartFeatureGroup extends StatelessWidget {
+  final List<Widget> children;
+
+  const _SmartFeatureGroup({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 18, top: 2),
+      padding: const EdgeInsets.only(left: 14),
+      decoration: BoxDecoration(border: Border(left: BorderSide(color: AppColors.border, width: 2))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+    );
+  }
+}
+
+/// One row inside a _SmartFeatureGroup -- deliberately smaller/lighter than
+/// _SmartFeatureParentTile (dense layout, regular weight, smaller type) so
+/// the typographic hierarchy alone signals "child of the switch above,"
+/// even before the indentation/rail is noticed.
+///
+/// Standard parent/child toggle semantics: `enabled: false` (the parent is
+/// off) passes onChanged: null to SwitchListTile, which Flutter renders as
+/// a non-interactive, visually greyed-out row on its own -- no extra
+/// disabled-state styling needed here. The server enforces the same rule
+/// independently (see app.py's update_nudge_settings), so this is a real
+/// lock, not just a client-side suggestion.
+class _SmartFeatureChildTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool value;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+  final bool isLast;
+
+  const _SmartFeatureChildTile({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 2),
+      child: SwitchListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        activeThumbColor: AppColors.accent,
+        title: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.text)),
+        subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+        value: value,
+        onChanged: enabled ? onChanged : null,
       ),
     );
   }
