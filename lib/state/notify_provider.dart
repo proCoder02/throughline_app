@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../main.dart' show callProvider;
 import '../models/call.dart';
+import '../models/direct_message.dart';
 import '../services/notify_socket.dart';
 import '../services/push_service.dart'
     show dismissNativeRinging, markCallFinishedNative, showLocalNotification;
@@ -38,6 +39,64 @@ class NotifyProvider extends ChangeNotifier {
   // answered) natively. Cleared once the call is answered/ends so the set
   // doesn't grow without bound over a long session.
   final Set<int> _nativelyRingingCallIds = {};
+
+  // -- Direct messages (friend-to-friend chat) -----------------------------
+  final Map<int, int> directMessageBadges = {}; // friendId -> unread count, for the Friends-list badge
+  final Map<int, List<DirectMessage>> _pendingDirectMessages = {}; // friendId -> not yet drained by an open thread screen
+  final Map<int, List<int>> _pendingReadReceipts = {}; // friendId -> ids of MY messages they just read
+  final Map<int, List<int>> _pendingDeliveryReceipts = {}; // friendId -> ids of MY messages that just reached their device
+  int? _activeDirectMessageFriendId; // whichever thread (if any) is currently on-screen -- suppresses its own notification
+
+  // friendId -> auto-clear timer; presence in this map IS the "is typing"
+  // state (checked via isFriendTyping) rather than a separate Set, so there's
+  // one source of truth instead of two collections that could drift apart.
+  final Map<int, Timer> _typingTimers = {};
+  static const _typingTimeout = Duration(seconds: 3);
+
+  bool isFriendTyping(int friendId) => _typingTimers.containsKey(friendId);
+
+  /// Debounced by the caller (DirectMessageScreen), not here -- this just
+  /// sends whatever it's told to, matching ackDelivered/ackRead's own
+  /// "dumb relay" shape.
+  void sendTyping(int friendId) => _socket.send({'type': 'typing', 'friend_id': friendId});
+
+  /// Sends a delivery/read ack over this same persistent connection --
+  /// WhatsApp-style, not a separate REST call (see app.py's
+  /// _handle_notify_client_message). ackDelivered fires globally, for ANY
+  /// incoming message regardless of which screen is open (see the
+  /// 'direct_message' case below) -- "reached this device" isn't specific
+  /// to a thread being open. ackRead is only ever called by
+  /// DirectMessageScreen itself, when that specific thread is actually
+  /// on-screen.
+  void ackDelivered(int friendId) => _socket.send({'type': 'ack_delivered', 'friend_id': friendId});
+
+  void ackRead(int friendId) => _socket.send({'type': 'ack_read', 'friend_id': friendId});
+
+  /// Seeds badges from a real GET (called once by FriendsScreen on load) --
+  /// WS deltas alone would miss anything that arrived before this session's
+  /// socket connected, same reasoning taskBadge/unreadConversations already
+  /// follow for their own initial state.
+  void setDirectMessageBadges(Map<int, int> counts) {
+    directMessageBadges
+      ..clear()
+      ..addAll(counts);
+    notifyListeners();
+  }
+
+  void clearDirectMessageBadge(int friendId) {
+    if (directMessageBadges.remove(friendId) != null) notifyListeners();
+  }
+
+  /// Called by DirectMessageScreen's initState/dispose so incoming messages
+  /// for the thread currently on-screen don't also fire a local
+  /// notification for something the user is already looking at.
+  void setActiveDirectMessageFriend(int? friendId) => _activeDirectMessageFriendId = friendId;
+
+  List<DirectMessage> drainPendingDirectMessages(int friendId) => _pendingDirectMessages.remove(friendId) ?? [];
+
+  List<int> drainReadReceipts(int friendId) => _pendingReadReceipts.remove(friendId) ?? [];
+
+  List<int> drainDeliveryReceipts(int friendId) => _pendingDeliveryReceipts.remove(friendId) ?? [];
 
   void start(String token) {
     _socket.connect(token, onEvent: _handle);
@@ -151,6 +210,61 @@ class NotifyProvider extends ChangeNotifier {
         if (feature != null && enabled != null) {
           final state = enabled ? 'on' : 'off';
           unawaited(showLocalNotification('Setting updated', "You've turned $state $feature."));
+        }
+        break;
+      case 'direct_message':
+        final msgJson = event['message'] as Map<String, dynamic>?;
+        if (msgJson != null) {
+          final message = DirectMessage.fromJson(msgJson);
+          _pendingDirectMessages.putIfAbsent(message.senderId, () => []).add(message);
+          // "Reached this device" fires for every incoming message
+          // regardless of which screen (if any) is open -- unlike the read
+          // ack below, which only ever comes from the thread actually being
+          // viewed. Also covers messages replayed from the pending-event
+          // queue on reconnect (drained through this exact same event path),
+          // so anything that arrived while the app was closed still gets
+          // acked once it reconnects.
+          ackDelivered(message.senderId);
+          if (_activeDirectMessageFriendId != message.senderId) {
+            directMessageBadges[message.senderId] = (directMessageBadges[message.senderId] ?? 0) + 1;
+            // FCM's own foreground-invisible behavior (see task_created above)
+            // means send_fcm_to_user's own notification wouldn't show while
+            // the app is open -- this WS-driven local one is what actually
+            // does, same as every other foreground-notification case here.
+            // Suppressed entirely (not just silenced) when this friend's
+            // thread is the one currently open, matching WhatsApp/Telegram
+            // not notifying you about the chat you're already looking at.
+            final senderName = event['sender_username'] as String? ?? 'New message';
+            unawaited(showLocalNotification(senderName, message.content));
+          }
+          notifyListeners();
+        }
+        break;
+      case 'direct_messages_read':
+        final friendId = event['friend_id'] as int?;
+        final ids = (event['message_ids'] as List?)?.map((e) => e as int).toList();
+        if (friendId != null && ids != null) {
+          _pendingReadReceipts.putIfAbsent(friendId, () => []).addAll(ids);
+          notifyListeners();
+        }
+        break;
+      case 'direct_messages_delivered':
+        final deliveredFriendId = event['friend_id'] as int?;
+        final deliveredIds = (event['message_ids'] as List?)?.map((e) => e as int).toList();
+        if (deliveredFriendId != null && deliveredIds != null) {
+          _pendingDeliveryReceipts.putIfAbsent(deliveredFriendId, () => []).addAll(deliveredIds);
+          notifyListeners();
+        }
+        break;
+      case 'friend_typing':
+        final typingFriendId = event['friend_id'] as int?;
+        if (typingFriendId != null) {
+          _typingTimers[typingFriendId]?.cancel();
+          _typingTimers[typingFriendId] = Timer(_typingTimeout, () {
+            _typingTimers.remove(typingFriendId);
+            notifyListeners();
+          });
+          notifyListeners();
         }
         break;
     }
