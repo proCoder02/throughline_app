@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../models/category.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../models/direct_message.dart';
 import '../models/friend.dart';
 import '../models/profile.dart';
 import '../models/task.dart';
@@ -155,6 +156,16 @@ class LocalCache {
     return _box.put('settings', jsonEncode(settings));
   }
 
+  Map<String, dynamic>? getNudgeSettings() {
+    final raw = _box.get('nudge_settings');
+    if (raw == null) return null;
+    return Map<String, dynamic>.from(jsonDecode(raw));
+  }
+
+  Future<void> setNudgeSettings(Map<String, dynamic> settings) {
+    return _box.put('nudge_settings', jsonEncode(settings));
+  }
+
   Categories? getCategories() {
     final raw = _box.get('categories');
     if (raw == null) return null;
@@ -163,6 +174,30 @@ class LocalCache {
 
   Future<void> setCategories(Categories categories) {
     return _box.put('categories', jsonEncode(categories.toJson()));
+  }
+
+  /// Same "instant from disk, refresh over the network" role as
+  /// getMessages/setMessages above, for a friend's direct-message thread.
+  /// Keyed by friend id (not a conversation id -- a DM thread is identified
+  /// by which friend it's with, there's no separate thread/conversation
+  /// row on the backend).
+  List<DirectMessage>? getDirectMessages(int friendId) {
+    final raw = _box.get('direct_messages:$friendId');
+    if (raw == null) return null;
+    return (jsonDecode(raw) as List).map((j) => DirectMessage.fromJson(j)).toList();
+  }
+
+  Future<void> setDirectMessages(int friendId, List<DirectMessage> messages) {
+    return _box.put('direct_messages:$friendId', jsonEncode(messages.map((m) => m.toJson()).toList()));
+  }
+
+  /// Only appends if this thread is already cached -- same reasoning as
+  /// appendMessages: otherwise there's nothing established to append to,
+  /// and the next full fetch populates it from scratch anyway.
+  Future<void> appendDirectMessages(int friendId, List<DirectMessage> newMessages) async {
+    final existing = getDirectMessages(friendId);
+    if (existing == null) return;
+    await setDirectMessages(friendId, [...existing, ...newMessages]);
   }
 
   /// Wipes every cached chat/conversation -- called on logout so a second

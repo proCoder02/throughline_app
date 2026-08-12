@@ -3,13 +3,16 @@ import 'package:provider/provider.dart';
 
 import '../../models/friend.dart';
 import '../../services/friend_service.dart';
+import '../../services/message_service.dart';
 import '../../state/call_provider.dart';
+import '../../state/notify_provider.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/offline_banner.dart';
 import 'call_history_screen.dart';
+import 'direct_message_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -20,6 +23,7 @@ class FriendsScreen extends StatefulWidget {
 
 class _FriendsScreenState extends State<FriendsScreen> {
   final _service = FriendService();
+  final _messageService = MessageService();
   final _codeController = TextEditingController();
   List<Friend>? _friends;
   bool _loading = true;
@@ -42,6 +46,21 @@ class _FriendsScreenState extends State<FriendsScreen> {
       _loading = false;
     }
     _load();
+    _loadUnreadMessageCounts();
+  }
+
+  Future<void> _loadUnreadMessageCounts() async {
+    try {
+      final counts = await _messageService.unreadCounts();
+      if (mounted) context.read<NotifyProvider>().setDirectMessageBadges(counts);
+    } catch (_) {
+      // Offline/unreachable -- badges just stay at whatever NotifyProvider
+      // already has from this session's WS deltas (or none yet).
+    }
+  }
+
+  Future<void> _openChat(Friend f) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DirectMessageScreen(friend: f)));
   }
 
   Future<void> _load() async {
@@ -120,6 +139,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
+    final directMessageBadges = context.watch<NotifyProvider>().directMessageBadges;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Friends'),
@@ -182,7 +202,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: _reload,
-              child: _buildList(),
+              child: _buildList(directMessageBadges),
             ),
           ),
           if (_pickingCall)
@@ -204,7 +224,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  Widget _buildList() {
+  Widget _buildList(Map<int, int> directMessageBadges) {
     if (_friends == null) {
       if (_loading) return const Center(child: CircularProgressIndicator());
       return Center(child: Text('Failed to load friends: $_loadError'));
@@ -238,7 +258,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
         }
         return _FriendRow(
           friend: f,
+          unreadMessages: directMessageBadges[f.id] ?? 0,
           onTap: () => _openFriend(f),
+          onChat: () => _openChat(f),
           onCall: () => _startCall([f.id]),
         );
       },
@@ -246,16 +268,24 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 }
 
-/// A single friend row: avatar, name, last-call summary, and a single
-/// prominent call action. Mood/rename/remove intentionally live one level
-/// down (CallHistoryScreen's app bar) rather than crowding this row with
-/// more icons than a glance needs.
+/// A single friend row: avatar, name, last-call summary, and two actions --
+/// chat (left) and call (right). Mood/rename/remove intentionally live one
+/// level down (CallHistoryScreen's app bar) rather than crowding this row
+/// with more icons than a glance needs.
 class _FriendRow extends StatelessWidget {
   final Friend friend;
+  final int unreadMessages;
   final VoidCallback onTap;
+  final VoidCallback onChat;
   final VoidCallback onCall;
 
-  const _FriendRow({required this.friend, required this.onTap, required this.onCall});
+  const _FriendRow({
+    required this.friend,
+    required this.unreadMessages,
+    required this.onTap,
+    required this.onChat,
+    required this.onCall,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -307,12 +337,37 @@ class _FriendRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              _ChatButton(onPressed: onChat, unreadCount: unreadMessages),
+              const SizedBox(width: 8),
               _CallButton(onPressed: onCall),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _ChatButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final int unreadCount;
+  const _ChatButton({required this.onPressed, this.unreadCount = 0});
+
+  @override
+  Widget build(BuildContext context) {
+    final button = Material(
+      color: AppColors.panel,
+      shape: CircleBorder(side: BorderSide(color: AppColors.border)),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: const Padding(
+          padding: EdgeInsets.all(10),
+          child: Icon(Icons.chat_bubble_outline, color: AppColors.accentDark, size: 20),
+        ),
+      ),
+    );
+    return unreadCount > 0 ? Badge(label: Text('$unreadCount'), child: button) : button;
   }
 }
 
