@@ -102,6 +102,11 @@ class NotifyProvider extends ChangeNotifier {
     _socket.connect(token, onEvent: _handle);
   }
 
+  /// See NotifySocket.forceReconnect -- called on app resume so ticks/
+  /// messages feel instant again immediately, not after a stale backoff
+  /// timer elapses.
+  void forceReconnect() => _socket.forceReconnect();
+
   void markNativelyRinging(int callId) => _nativelyRingingCallIds.add(callId);
 
   void clearNativelyRinging(int callId) => _nativelyRingingCallIds.remove(callId);

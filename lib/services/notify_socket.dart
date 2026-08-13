@@ -96,13 +96,34 @@ class NotifySocket {
     }
   }
 
+  // Tightened from [1, 2, 5, 10, 20] after finding, via real device testing,
+  // that the very first connection attempt at cold app start frequently
+  // fails (network/DNS not fully ready yet right after process start) --
+  // with the old schedule this meant task_created/direct_message pushes
+  // routinely arrived while the socket was still down, sometimes for 1-2+
+  // minutes before recovering. This schedule reaches its steady-state retry
+  // interval in under 10s instead of ~38s.
+  static const _reconnectDelaysSeconds = [0.5, 1, 2, 3, 5];
+
   void _scheduleReconnect() {
     _ready = false;
     if (_disposed) return;
     _reconnectTimer?.cancel();
-    final delaySeconds = [1, 2, 5, 10, 20][_attempt.clamp(0, 4)];
+    final delaySeconds = _reconnectDelaysSeconds[_attempt.clamp(0, _reconnectDelaysSeconds.length - 1)];
     _attempt++;
-    _reconnectTimer = Timer(Duration(seconds: delaySeconds), _open);
+    _reconnectTimer = Timer(Duration(milliseconds: (delaySeconds * 1000).round()), _open);
+  }
+
+  /// Called on app resume (see HomeShell's AppLifecycleState.resumed
+  /// handler) -- without this, a connection dropped while backgrounded just
+  /// sits on whatever backoff delay (up to 5s) happened to be running when
+  /// the user reopens the app, instead of reconnecting the instant it's
+  /// visible again. A no-op if already connected.
+  void forceReconnect() {
+    if (_disposed || _ready) return;
+    _reconnectTimer?.cancel();
+    _attempt = 0;
+    _open();
   }
 
   void dispose() {

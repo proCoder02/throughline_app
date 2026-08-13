@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../main.dart' show notifyProvider, callProvider, navigatorKey;
+import '../models/friend.dart';
 import '../services/api_client.dart';
+import '../services/friend_service.dart';
 import '../services/push_service.dart';
 import '../state/notify_provider.dart';
 import '../state/theme_provider.dart';
@@ -15,6 +17,7 @@ import 'chats/chats_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'profiles/profiles_screen.dart';
 import 'friends/friends_screen.dart';
+import 'friends/direct_message_screen.dart';
 import 'settings/settings_screen.dart';
 
 /// Bottom-nav shell for phones (Â§2): replaces the web app's 3-pane layout.
@@ -25,7 +28,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
 
   // Only the active tab's screen is actually built/initState'd -- an eager
@@ -53,7 +56,20 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_bootstrap());
+  }
+
+  // WhatsApp/Telegram-style instant ticks after backgrounding: without this,
+  // a WS connection dropped while backgrounded (OS network suspension, or
+  // just cellular/wifi handoff) sits on whatever backoff delay happened to
+  // be running when the app comes back, instead of reconnecting the moment
+  // it's visible again -- see NotifySocket.forceReconnect.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      notifyProvider.forceReconnect();
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -122,6 +138,15 @@ class _HomeShellState extends State<HomeShell> {
           // the existing "view source conversation" icon already does on
           // the Tasks tab.
           _openConversationFromPush(data);
+          break;
+        case 'direct_message':
+          // Only sender_id/message_id ride along on this payload (see
+          // send_direct_message in app.py) -- no name, so the friend has to
+          // be looked up before DirectMessageScreen (which needs a full
+          // Friend, not just an id) can open. WhatsApp/Telegram both land
+          // you straight in the conversation from a tapped notification;
+          // without this it fell back to just opening HomeShell.
+          _openDirectMessageFromPush(data);
         // reminder_email_sent / friend_mood_update: landing on HomeShell is
         // enough for now -- the relevant tab's badge already reflects it
         // once the WS reconnects.
@@ -142,6 +167,30 @@ class _HomeShellState extends State<HomeShell> {
       navigatorKey.currentState?.push(
         MaterialPageRoute(
             builder: (_) => ChatThreadScreen(conversationId: conversationId)),
+      );
+    });
+  }
+
+  Future<void> _openDirectMessageFromPush(Map<String, dynamic> data) async {
+    final friendId = int.tryParse(data['sender_id']?.toString() ?? '');
+    if (friendId == null) return;
+    notifyProvider.clearDirectMessageBadge(friendId);
+
+    final service = FriendService();
+    Friend? friend = service.listCached()?.where((f) => f.id == friendId).firstOrNull;
+    if (friend == null) {
+      try {
+        friend = (await service.list()).where((f) => f.id == friendId).firstOrNull;
+      } catch (_) {
+        // No connectivity or the lookup failed -- staying on HomeShell
+        // (today's fallback for this case) beats crashing the tap handler.
+      }
+    }
+    if (friend == null || !mounted) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => DirectMessageScreen(friend: friend!)),
       );
     });
   }
@@ -184,6 +233,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     notifyProvider.stop();
     super.dispose();
   }
