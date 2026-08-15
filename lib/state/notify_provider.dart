@@ -27,6 +27,7 @@ class NotifyProvider extends ChangeNotifier {
   final NotifySocket _socket = NotifySocket();
   final Set<int> unreadConversations = {};
   int taskBadge = 0;
+  int digestBadge = 0;
   IncomingCall? incomingCall;
   ForegroundNotice? foregroundNotice;
 
@@ -102,6 +103,11 @@ class NotifyProvider extends ChangeNotifier {
     _socket.connect(token, onEvent: _handle);
   }
 
+  /// See NotifySocket.forceReconnect -- called on app resume so ticks/
+  /// messages feel instant again immediately, not after a stale backoff
+  /// timer elapses.
+  void forceReconnect() => _socket.forceReconnect();
+
   void markNativelyRinging(int callId) => _nativelyRingingCallIds.add(callId);
 
   void clearNativelyRinging(int callId) => _nativelyRingingCallIds.remove(callId);
@@ -123,6 +129,20 @@ class NotifyProvider extends ChangeNotifier {
           description ?? 'untitled',
           conversationId: event['conversation_id'] as int?,
           description: description,
+        ));
+        notifyListeners();
+        break;
+      case 'digest_ready':
+        // Same foreground-visibility reasoning as task_created above (FCM's
+        // own notification block never auto-displays while the app is
+        // open) -- no conversationId to deep-link with here, this just
+        // opens DigestScreen directly (see home_shell.dart's
+        // onMessageTapped and InsightPreviewCard, the two ways into it).
+        digestBadge++;
+        unawaited(showLocalNotification(
+          'Your weekly insight is ready',
+          "Tap to see what I've noticed this week.",
+          isDigest: true,
         ));
         notifyListeners();
         break;
@@ -305,6 +325,13 @@ class NotifyProvider extends ChangeNotifier {
     }
   }
 
+  void clearDigestBadge() {
+    if (digestBadge != 0) {
+      digestBadge = 0;
+      notifyListeners();
+    }
+  }
+
   void clearIncomingCall() {
     if (incomingCall != null) {
       incomingCall = null;
@@ -323,6 +350,7 @@ class NotifyProvider extends ChangeNotifier {
     _socket.dispose();
     unreadConversations.clear();
     taskBadge = 0;
+    digestBadge = 0;
     incomingCall = null;
     foregroundNotice = null;
   }

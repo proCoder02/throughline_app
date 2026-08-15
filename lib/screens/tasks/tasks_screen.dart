@@ -54,6 +54,27 @@ class _TasksScreenState extends State<TasksScreen> {
     }
     _load();
     notifyProvider.clearTaskBadge();
+    notifyProvider.addListener(_onNotify);
+  }
+
+  // HomeShell's IndexedStack keeps this screen's state alive across tab
+  // switches (see its own doc comment), so initState's _load() above only
+  // ever runs once per app session -- a task created later (e.g. a reminder
+  // detected in chat, well after this tab was first visited) would
+  // otherwise never appear without a manual pull-to-refresh. taskBadge
+  // already increments on every task_created event regardless of which tab
+  // is showing, so it doubles as "a task arrived since we last checked".
+  void _onNotify() {
+    if (notifyProvider.taskBadge > 0) {
+      notifyProvider.clearTaskBadge();
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    notifyProvider.removeListener(_onNotify);
+    super.dispose();
   }
 
   Future<void> _load() async {

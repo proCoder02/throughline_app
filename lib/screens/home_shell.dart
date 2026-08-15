@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../main.dart' show notifyProvider, callProvider, navigatorKey;
+import '../models/friend.dart';
 import '../services/api_client.dart';
+import '../services/friend_service.dart';
 import '../services/push_service.dart';
 import '../state/notify_provider.dart';
 import '../state/theme_provider.dart';
@@ -12,9 +14,11 @@ import '../widgets/call_overlay.dart';
 import '../widgets/island_nav_bar.dart';
 import 'chats/chat_thread_screen.dart';
 import 'chats/chats_screen.dart';
+import 'insights/digest_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'profiles/profiles_screen.dart';
 import 'friends/friends_screen.dart';
+import 'friends/direct_message_screen.dart';
 import 'settings/settings_screen.dart';
 
 /// Bottom-nav shell for phones (Â§2): replaces the web app's 3-pane layout.
@@ -25,7 +29,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
 
   // Only the active tab's screen is actually built/initState'd -- an eager
@@ -53,7 +57,20 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_bootstrap());
+  }
+
+  // WhatsApp/Telegram-style instant ticks after backgrounding: without this,
+  // a WS connection dropped while backgrounded (OS network suspension, or
+  // just cellular/wifi handoff) sits on whatever backoff delay happened to
+  // be running when the app comes back, instead of reconnecting the moment
+  // it's visible again -- see NotifySocket.forceReconnect.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      notifyProvider.forceReconnect();
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -76,6 +93,10 @@ class _HomeShellState extends State<HomeShell> {
     // SimpleNotificationHelper's task_created notification -- see
     // consumePendingTaskAction() below for the cold-start counterpart.
     PushService.instance.onTaskActionRequested = _openConversationForTaskAction;
+    // Fed by MainActivity.kt's capturePendingDigestOpen() -- same
+    // already-running-engine case as onTaskActionRequested above, for a tap
+    // on SimpleNotificationHelper's digest_ready notification.
+    PushService.instance.onDigestReadyTapped = _openDigestFromPush;
     PushService.instance.listenForNativeCallAnswers();
 
     // Checked -- and, if it fires, acted on -- before the WS socket below is
@@ -96,6 +117,10 @@ class _HomeShellState extends State<HomeShell> {
     // rather than delivering onNewIntent to an already-running engine.
     final pendingTaskAction = await consumePendingTaskAction();
     if (pendingTaskAction != null) _openConversationForTaskAction(pendingTaskAction);
+
+    // Cold-start counterpart to onDigestReadyTapped above.
+    final pendingDigestOpen = await consumePendingDigestOpen();
+    if (pendingDigestOpen) _openDigestFromPush();
 
     // Connect the app-wide notify socket once, for as long as the user stays
     // in the authenticated area (this widget persists across tab switches).
@@ -122,6 +147,22 @@ class _HomeShellState extends State<HomeShell> {
           // the existing "view source conversation" icon already does on
           // the Tasks tab.
           _openConversationFromPush(data);
+          break;
+        case 'direct_message':
+          // Only sender_id/message_id ride along on this payload (see
+          // send_direct_message in app.py) -- no name, so the friend has to
+          // be looked up before DirectMessageScreen (which needs a full
+          // Friend, not just an id) can open. WhatsApp/Telegram both land
+          // you straight in the conversation from a tapped notification;
+          // without this it fell back to just opening HomeShell.
+          _openDirectMessageFromPush(data);
+          break;
+        case 'digest_ready':
+          // No id/content on this payload at all (see _check_weekly_digest
+          // in nudge_engine.py -- deliberately just a teaser) -- DigestScreen
+          // fetches the real content itself on open, same push-is-a-teaser
+          // pattern task_created/direct_message already use.
+          _openDigestFromPush();
         // reminder_email_sent / friend_mood_update: landing on HomeShell is
         // enough for now -- the relevant tab's badge already reflects it
         // once the WS reconnects.
@@ -142,6 +183,30 @@ class _HomeShellState extends State<HomeShell> {
       navigatorKey.currentState?.push(
         MaterialPageRoute(
             builder: (_) => ChatThreadScreen(conversationId: conversationId)),
+      );
+    });
+  }
+
+  Future<void> _openDirectMessageFromPush(Map<String, dynamic> data) async {
+    final friendId = int.tryParse(data['sender_id']?.toString() ?? '');
+    if (friendId == null) return;
+    notifyProvider.clearDirectMessageBadge(friendId);
+
+    final service = FriendService();
+    Friend? friend = service.listCached()?.where((f) => f.id == friendId).firstOrNull;
+    if (friend == null) {
+      try {
+        friend = (await service.list()).where((f) => f.id == friendId).firstOrNull;
+      } catch (_) {
+        // No connectivity or the lookup failed -- staying on HomeShell
+        // (today's fallback for this case) beats crashing the tap handler.
+      }
+    }
+    if (friend == null || !mounted) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => DirectMessageScreen(friend: friend!)),
       );
     });
   }
@@ -168,6 +233,15 @@ class _HomeShellState extends State<HomeShell> {
     });
   }
 
+  void _openDigestFromPush() {
+    notifyProvider.clearDigestBadge();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const DigestScreen()),
+      );
+    });
+  }
+
   void _joinNativelyAnsweredCall(Map<String, dynamic> data) {
     final callId = int.tryParse(data['call_id']?.toString() ?? '');
     final callerId = int.tryParse(data['caller_id']?.toString() ?? '');
@@ -184,6 +258,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     notifyProvider.stop();
     super.dispose();
   }

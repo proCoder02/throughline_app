@@ -46,7 +46,8 @@ object SimpleNotificationHelper {
         title: String,
         body: String,
         conversationId: String? = null,
-        taskDescription: String? = null
+        taskDescription: String? = null,
+        isDigest: Boolean = false
     ) {
         ensureChannel(context)
         val id = notificationIdCounter++
@@ -61,8 +62,13 @@ object SimpleNotificationHelper {
             }
         }
 
+        val contentAction = when {
+            isDigest -> MainActivity.ACTION_DIGEST_OPEN
+            conversationId != null -> MainActivity.ACTION_TASK_OPEN
+            else -> null
+        }
         val contentPendingIntent = PendingIntent.getActivity(
-            context, id, buildIntent(if (conversationId != null) MainActivity.ACTION_TASK_OPEN else null),
+            context, id, buildIntent(contentAction),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 

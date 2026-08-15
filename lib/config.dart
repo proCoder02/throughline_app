@@ -1,20 +1,17 @@
-/// Backend location. Defaults to the local dev backend (see
-/// scripts/backend-start.ps1 in the speech2text repo) since production on
-/// AWS is being decommissioned -- dev now happens entirely against local.
-///
-/// 192.168.0.107 is this dev machine's current LAN IP, required for a
-/// physical device over Wi-Fi (what's actually been used for testing this
-/// app) -- it can change if the machine reconnects to Wi-Fi or DHCP
-/// reassigns it, so re-check with `ipconfig` if requests start failing.
+/// Backend location. Defaults to the Oracle Cloud deployment (see
+/// speech2text/infra/terraform) -- plain HTTP for now since it's reachable
+/// only by IP until a domain is pointed at it for HTTPS (see infra/README.md
+/// step 4); res/xml/network_security_config.xml scopes the Android
+/// cleartext-traffic exception to just this IP.
 ///
 /// Override at build/run time for a different target, e.g.:
-///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000       # Android emulator
-///   flutter run --dart-define=API_BASE_URL=http://localhost:5000      # iOS simulator
-///   flutter run --dart-define=API_BASE_URL=https://rapexapi.nodexdata.click  # old prod, while it still exists
+///   flutter run --dart-define=API_BASE_URL=http://192.168.0.107:5000    # local dev backend (see scripts/backend-start.ps1)
+///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000         # Android emulator, against local dev backend
+///   flutter run --dart-define=API_BASE_URL=http://localhost:5000        # iOS simulator, against local dev backend
 class ApiConfig {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.0.107:5000',
+    defaultValue: 'http://129.213.21.239',
   );
 
   static String get wsBase => baseUrl.replaceFirst(RegExp(r'^http'), 'ws');

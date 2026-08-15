@@ -22,6 +22,10 @@ class MainActivity : FlutterActivity() {
         // Dart auto-submit a question about the task).
         const val ACTION_TASK_OPEN = "com.nodexdata.speechtotext.TASK_OPEN"
         const val ACTION_TASK_ASK = "com.nodexdata.speechtotext.TASK_ASK"
+        // From SimpleNotificationHelper's digest_ready notification -- no id
+        // payload needed (unlike TASK_OPEN's conversation_id), DigestScreen
+        // fetches its own content on open, see digest_service.dart.
+        const val ACTION_DIGEST_OPEN = "com.nodexdata.speechtotext.DIGEST_OPEN"
     }
 
     // Set once by capturePendingCallAnswer(), read-and-cleared by Dart's
@@ -36,6 +40,10 @@ class MainActivity : FlutterActivity() {
     // ACTION_TASK_OPEN/ACTION_TASK_ASK -- "ask" distinguishes the
     // notification's default tap from its "Ask" action.
     private var pendingTaskAction: Map<String, String?>? = null
+
+    // Same pull-not-push pattern again, for ACTION_DIGEST_OPEN -- just a
+    // flag, no payload (see ACTION_DIGEST_OPEN's own comment).
+    private var pendingDigestOpen: Boolean = false
 
     // Non-null once configureFlutterEngine has run for this engine instance
     // (it lives for as long as the engine does, across any number of later
@@ -55,6 +63,7 @@ class MainActivity : FlutterActivity() {
         registerPhoneAccount()
         capturePendingCallAnswer(intent)
         capturePendingTaskAction(intent)
+        capturePendingDigestOpen(intent)
 
         val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel.setMethodCallHandler { call, result ->
@@ -86,6 +95,11 @@ class MainActivity : FlutterActivity() {
                     result.success(pendingTaskAction)
                     pendingTaskAction = null
                 }
+                "getPendingDigestOpen" -> {
+                    Log.d(TAG, "getPendingDigestOpen: returning $pendingDigestOpen")
+                    result.success(pendingDigestOpen)
+                    pendingDigestOpen = false
+                }
                 "markCallFinished" -> {
                     val callId = call.argument<String>("call_id")
                     Log.d(TAG, "markCallFinished: callId=$callId")
@@ -97,7 +111,8 @@ class MainActivity : FlutterActivity() {
                     val body = call.argument<String>("body") ?: ""
                     val conversationId = call.argument<String>("conversationId")
                     val description = call.argument<String>("description")
-                    SimpleNotificationHelper.show(applicationContext, title, body, conversationId, description)
+                    val isDigest = call.argument<Boolean>("isDigest") ?: false
+                    SimpleNotificationHelper.show(applicationContext, title, body, conversationId, description, isDigest)
                     result.success(null)
                 }
                 "dismissNativeRinging" -> {
@@ -130,6 +145,7 @@ class MainActivity : FlutterActivity() {
         Log.d(TAG, "onNewIntent: action=${intent.action}")
         capturePendingCallAnswer(intent)
         capturePendingTaskAction(intent)
+        capturePendingDigestOpen(intent)
     }
 
     private fun capturePendingCallAnswer(intent: Intent?) {
@@ -175,6 +191,22 @@ class MainActivity : FlutterActivity() {
         } else {
             pendingTaskAction = data
             Log.d(TAG, "capturePendingTaskAction: stored for cold-start pull: $data")
+        }
+    }
+
+    /** Same push-if-running/pull-if-cold-start split again, for a tap on
+     * SimpleNotificationHelper's digest_ready notification. No payload to
+     * carry (unlike task's conversation_id) -- DigestScreen fetches its own
+     * content, this just needs to signal "open it". */
+    private fun capturePendingDigestOpen(intent: Intent?) {
+        if (intent?.action != ACTION_DIGEST_OPEN) return
+        val existingChannel = channel
+        if (existingChannel != null) {
+            Log.d(TAG, "capturePendingDigestOpen: pushing directly to Dart (engine already running)")
+            existingChannel.invokeMethod("digestOpenRequested", null)
+        } else {
+            pendingDigestOpen = true
+            Log.d(TAG, "capturePendingDigestOpen: stored for cold-start pull")
         }
     }
 

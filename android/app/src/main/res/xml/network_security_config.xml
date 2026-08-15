@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scoped cleartext exception for the Oracle Cloud backend (see lib/config.dart).
+     Reachable only by plain HTTP until a domain is pointed at it for HTTPS
+     (see speech2text/infra/README.md step 4). Remove this file and the
+     networkSecurityConfig reference in AndroidManifest.xml once that happens. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">129.213.21.239</domain>
+    </domain-config>
+</network-security-config>

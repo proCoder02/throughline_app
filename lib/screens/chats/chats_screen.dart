@@ -21,6 +21,7 @@ import '../../widgets/category_chip_bar.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
+import '../../widgets/insight_preview_card.dart';
 import '../../widgets/island_nav_bar.dart';
 import '../../widgets/live_timer_text.dart';
 import '../../widgets/mood_trend_card.dart';
@@ -378,6 +379,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         children: [
           if (_offline) const OfflineBanner(),
           if (_search.isEmpty) const MoodTrendCard(),
+          if (_search.isEmpty) const InsightPreviewCard(),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _reload,

@@ -77,6 +77,12 @@ class PushService {
   /// carries conversation_id, task_description, and ask ("true"/"false").
   void Function(Map<String, dynamic> data)? onTaskActionRequested;
 
+  /// Fed by MainActivity.kt's capturePendingDigestOpen() -- a tap on
+  /// SimpleNotificationHelper's digest_ready notification while the engine
+  /// is already running. No payload (unlike task's conversation_id) --
+  /// DigestScreen fetches its own content on open.
+  void Function()? onDigestReadyTapped;
+
   bool _callChannelHandlerAttached = false;
 
   /// Call once, as early as possible (before any call could plausibly come
@@ -97,6 +103,9 @@ class PushService {
           break;
         case 'taskActionRequested':
           onTaskActionRequested?.call(Map<String, dynamic>.from(call.arguments as Map));
+          break;
+        case 'digestOpenRequested':
+          onDigestReadyTapped?.call();
           break;
       }
     });
@@ -306,6 +315,7 @@ Future<void> showLocalNotification(
   String body, {
   int? conversationId,
   String? description,
+  bool isDigest = false,
 }) async {
   if (!Platform.isAndroid) return;
   try {
@@ -314,6 +324,7 @@ Future<void> showLocalNotification(
       'body': body,
       'conversationId': conversationId?.toString(),
       'description': description,
+      'isDigest': isDigest,
     });
   } catch (_) {
     // Best-effort -- worst case this falls back to no visible heads-up at all.
@@ -332,5 +343,19 @@ Future<Map<String, dynamic>?> consumePendingTaskAction() async {
     return Map<String, dynamic>.from(result as Map);
   } catch (_) {
     return null;
+  }
+}
+
+/// Checks whether this cold start was launched by tapping
+/// SimpleNotificationHelper's digest_ready notification -- see
+/// MainActivity.capturePendingDigestOpen(). Read-once-and-clear, same pull
+/// pattern as consumePendingTaskAction above; just a bool, no payload.
+Future<bool> consumePendingDigestOpen() async {
+  if (!Platform.isAndroid) return false;
+  try {
+    final result = await _kCallChannel.invokeMethod('getPendingDigestOpen');
+    return result == true;
+  } catch (_) {
+    return false;
   }
 }
