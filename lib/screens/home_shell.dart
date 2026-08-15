@@ -14,6 +14,7 @@ import '../widgets/call_overlay.dart';
 import '../widgets/island_nav_bar.dart';
 import 'chats/chat_thread_screen.dart';
 import 'chats/chats_screen.dart';
+import 'insights/digest_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'profiles/profiles_screen.dart';
 import 'friends/friends_screen.dart';
@@ -92,6 +93,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // SimpleNotificationHelper's task_created notification -- see
     // consumePendingTaskAction() below for the cold-start counterpart.
     PushService.instance.onTaskActionRequested = _openConversationForTaskAction;
+    // Fed by MainActivity.kt's capturePendingDigestOpen() -- same
+    // already-running-engine case as onTaskActionRequested above, for a tap
+    // on SimpleNotificationHelper's digest_ready notification.
+    PushService.instance.onDigestReadyTapped = _openDigestFromPush;
     PushService.instance.listenForNativeCallAnswers();
 
     // Checked -- and, if it fires, acted on -- before the WS socket below is
@@ -112,6 +117,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // rather than delivering onNewIntent to an already-running engine.
     final pendingTaskAction = await consumePendingTaskAction();
     if (pendingTaskAction != null) _openConversationForTaskAction(pendingTaskAction);
+
+    // Cold-start counterpart to onDigestReadyTapped above.
+    final pendingDigestOpen = await consumePendingDigestOpen();
+    if (pendingDigestOpen) _openDigestFromPush();
 
     // Connect the app-wide notify socket once, for as long as the user stays
     // in the authenticated area (this widget persists across tab switches).
@@ -147,6 +156,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           // you straight in the conversation from a tapped notification;
           // without this it fell back to just opening HomeShell.
           _openDirectMessageFromPush(data);
+          break;
+        case 'digest_ready':
+          // No id/content on this payload at all (see _check_weekly_digest
+          // in nudge_engine.py -- deliberately just a teaser) -- DigestScreen
+          // fetches the real content itself on open, same push-is-a-teaser
+          // pattern task_created/direct_message already use.
+          _openDigestFromPush();
         // reminder_email_sent / friend_mood_update: landing on HomeShell is
         // enough for now -- the relevant tab's badge already reflects it
         // once the WS reconnects.
@@ -213,6 +229,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             initialQuestion: (ask && description != null) ? 'What was said about: $description?' : null,
           ),
         ),
+      );
+    });
+  }
+
+  void _openDigestFromPush() {
+    notifyProvider.clearDigestBadge();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const DigestScreen()),
       );
     });
   }
