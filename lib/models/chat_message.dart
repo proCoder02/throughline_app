@@ -1,3 +1,5 @@
+import 'dart:io';
+
 class ChatMessage {
   final String role; // "user" | "assistant"
   final String content;
@@ -10,8 +12,21 @@ class ChatMessage {
   // messages sent this session, but won't reappear after a true reload
   // from the server for older history.
   final String? replyToPreview;
+  // The image picked for an outgoing image message, for immediate bubble
+  // display -- deliberately NOT included in toJson()/fromJson(). The backend
+  // never persists raw image bytes (only the vision-extracted text, stored
+  // as a regular conversation), so there is nothing to round-trip: this is
+  // always null for any message loaded from LocalCache or from the server,
+  // and only ever set for a message sent earlier in the current app session.
+  final File? localImage;
 
-  ChatMessage({required this.role, required this.content, required this.createdAt, this.replyToPreview});
+  ChatMessage({
+    required this.role,
+    required this.content,
+    required this.createdAt,
+    this.replyToPreview,
+    this.localImage,
+  });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
         role: json['role'],

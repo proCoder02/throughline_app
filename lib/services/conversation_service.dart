@@ -104,6 +104,28 @@ class ConversationService {
     return reply;
   }
 
+  /// Companion to sendGlobalChat -- sends an image (e.g. a bill photo) with
+  /// a required description into the global chat. The backend extracts the
+  /// image's content via a vision model and stores it as a normal
+  /// conversation, so it's retrievable in a later plain-text globalChat()
+  /// question with no special handling needed on this side. The description
+  /// is cached the same way the text-chat prompt is above (localImage is
+  /// deliberately NOT persisted -- see ChatMessage's own doc comment).
+  Future<String> sendGlobalImage(File imageFile, String description) async {
+    final form = FormData.fromMap({
+      'description': description,
+      'image': await MultipartFile.fromFile(imageFile.path),
+    });
+    final r = await _api.dio.post('/chat/global/image', data: form);
+    final reply = (r.data['reply'] as String?) ?? 'No response.';
+    final now = DateTime.now();
+    await _cache.appendGlobalMessages([
+      ChatMessage(role: 'user', content: description, createdAt: now),
+      ChatMessage(role: 'assistant', content: reply, createdAt: now),
+    ]);
+    return reply;
+  }
+
   /// Full-text search over titles/transcripts/chat content (GET /search) --
   /// not cached locally, unlike everything above: results are query-specific
   /// and change as chats grow, so there's nothing durable worth persisting

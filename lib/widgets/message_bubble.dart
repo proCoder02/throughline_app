@@ -36,6 +36,16 @@ class MessageBubble extends StatelessWidget {
               _ReplyQuote(text: message.replyToPreview!),
               const SizedBox(height: 6),
             ],
+            // Session-only -- see ChatMessage.localImage's doc comment. Only
+            // ever set for a message sent earlier in the current session,
+            // never for one loaded from cache/server.
+            if (message.localImage != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.file(message.localImage!, fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 6),
+            ],
             FormattedText(message.content, style: TextStyle(color: AppColors.text)),
             const SizedBox(height: 2),
             Text(
