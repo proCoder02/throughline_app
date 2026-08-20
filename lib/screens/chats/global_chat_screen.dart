@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/chat_message.dart';
@@ -23,6 +26,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   final _service = ConversationService();
   final _promptController = TextEditingController();
   final _scrollController = ScrollController();
+  final _picker = ImagePicker();
 
   List<ChatMessage> _messages = [];
   bool _loading = true;
@@ -130,6 +134,110 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked == null || !mounted) return;
+    final description = await _showDescribeImageSheet(File(picked.path));
+    if (description == null || !mounted) return; // cancelled
+    _sendImage(File(picked.path), description);
+  }
+
+  /// WhatsApp-style: picking an image doesn't send it immediately -- this
+  /// shows a preview with a required description field first, and only
+  /// returns once the user confirms Send (returns the description) or
+  /// dismisses/cancels (returns null).
+  Future<String?> _showDescribeImageSheet(File file) {
+    final controller = TextEditingController();
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(file, height: 200, fit: BoxFit.cover),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Add a description...',
+                    filled: true,
+                    fillColor: AppColors.panel,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: controller,
+                        builder: (_, value, __) => ElevatedButton(
+                          onPressed: value.text.trim().isEmpty
+                              ? null
+                              : () => Navigator.of(sheetContext).pop(value.text.trim()),
+                          child: const Text('Send'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _sendImage(File file, String description) async {
+    setState(() {
+      _sending = true;
+      _messages = [
+        ..._messages,
+        ChatMessage(role: 'user', content: description, createdAt: DateTime.now(), localImage: file),
+      ];
+    });
+    _scrollToEnd();
+    try {
+      final reply = await _service.sendGlobalImage(file, description);
+      if (!mounted) return;
+      setState(() {
+        _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
+      });
+      _scrollToEnd();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _messages = [
+          ..._messages,
+          ChatMessage(role: 'assistant', content: 'Request failed.', createdAt: DateTime.now()),
+        ];
+      });
+      _scrollToEnd();
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
@@ -211,6 +319,11 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                           ),
                         Row(
                           children: [
+                            IconButton(
+                              icon: const Icon(Icons.attach_file),
+                              tooltip: 'Attach an image',
+                              onPressed: _sending ? null : _pickImage,
+                            ),
                             Expanded(
                               child: TextField(
                                 controller: _promptController,
