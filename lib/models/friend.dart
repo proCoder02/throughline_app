@@ -38,7 +38,7 @@ class Friend {
       };
 }
 
-/// One entry in a friend's full call log (CallHistoryScreen) -- see
+/// One entry in a friend's full call log (FriendProfileScreen) -- see
 /// GET /friends/<id>/calls.
 class CallHistoryEntry {
   final int callId;
@@ -69,6 +69,49 @@ class CallHistoryEntry {
         status: json['status'],
         outgoing: json['outgoing'] as bool,
         myStatus: json['my_status'] ?? 'invited',
+      );
+}
+
+/// My own cognitive-sharing level for one friend, plus whether BOTH
+/// directions are currently 'limited' or higher. Deliberately never carries
+/// the other side's actual level -- see GET /friends/<id>/cognitive-sharing
+/// in app.py, which never returns it either (that itself would leak their
+/// privacy posture).
+class CognitiveSharingStatus {
+  final String myLevel; // 'off' | 'limited' | 'collaborative'
+  final bool bothEnabled;
+
+  CognitiveSharingStatus({required this.myLevel, required this.bothEnabled});
+
+  factory CognitiveSharingStatus.fromJson(Map<String, dynamic> json) => CognitiveSharingStatus(
+        myLevel: json['my_level'] as String,
+        bothEnabled: json['both_enabled'] as bool,
+      );
+}
+
+/// Phase 2/3 of COGNITIVE_SHARING_INTERVENTION_PLAN.md -- the result of an
+/// on-demand "find common ground" request (POST/GET
+/// /friends/<id>/cognitive-suggestion). `dismissed` reflects only the
+/// viewer's OWN side (dismissed_by_a/dismissed_by_b on the server) --
+/// dismissing never affects what the other participant still sees.
+class CognitiveSuggestion {
+  final int id;
+  final String suggestionText;
+  final DateTime? createdAt;
+  final bool dismissed;
+
+  CognitiveSuggestion({
+    required this.id,
+    required this.suggestionText,
+    required this.createdAt,
+    required this.dismissed,
+  });
+
+  factory CognitiveSuggestion.fromJson(Map<String, dynamic> json) => CognitiveSuggestion(
+        id: json['id'],
+        suggestionText: json['suggestion_text'] as String,
+        createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']).toLocal() : null,
+        dismissed: json['dismissed'] as bool? ?? false,
       );
 }
 

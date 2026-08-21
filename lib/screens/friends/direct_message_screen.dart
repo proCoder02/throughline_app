@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/direct_message.dart';
 import '../../models/friend.dart';
+import '../../services/friend_service.dart';
 import '../../services/message_service.dart';
 import '../../state/auth_provider.dart';
 import '../../state/notify_provider.dart';
@@ -30,6 +31,7 @@ class DirectMessageScreen extends StatefulWidget {
 
 class _DirectMessageScreenState extends State<DirectMessageScreen> {
   final _service = MessageService();
+  final _friendService = FriendService();
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
 
@@ -39,6 +41,11 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   Object? _loadError;
   bool _offline = false;
   bool _hasText = false;
+
+  // -- Cognitive Sharing (Phase 2/3) --------------------------------------
+  bool _cognitiveSharingAvailable = false; // both sides >= 'limited' -- gates the AppBar action
+  bool _requestingSuggestion = false;
+  CognitiveSuggestion? _suggestion;
 
   late final NotifyProvider _notify;
   int? _myUserId;
@@ -64,6 +71,8 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     }
     _load();
     _markRead();
+    _loadCognitiveSharingAvailability();
+    _loadLatestSuggestion();
   }
 
   @override
@@ -99,6 +108,10 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     if (incoming.isNotEmpty) {
       _markRead(); // arrived while the thread was already open -- read immediately
       _scrollToBottom();
+    }
+    if (_notify.hasPendingCognitiveSuggestion(widget.friend.id)) {
+      _notify.clearPendingCognitiveSuggestion(widget.friend.id);
+      _loadLatestSuggestion();
     }
   }
 
@@ -151,6 +164,64 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   Future<void> _markRead() async {
     _notify.ackRead(widget.friend.id);
     _notify.clearDirectMessageBadge(widget.friend.id);
+  }
+
+  Future<void> _loadCognitiveSharingAvailability() async {
+    try {
+      final status = await _friendService.getCognitiveSharing(widget.friend.id);
+      if (mounted) setState(() => _cognitiveSharingAvailable = status.bothEnabled);
+    } catch (_) {
+      // Offline/unreachable -- action stays hidden rather than showing
+      // something that would just 403 if tapped.
+    }
+  }
+
+  /// Picks up a suggestion that already exists for this pair -- either from
+  /// before this screen opened, or right after a 'cognitive_suggestion' WS
+  /// event tells us one exists (see _onNotify above).
+  Future<void> _loadLatestSuggestion() async {
+    try {
+      final suggestion = await _friendService.getLatestCognitiveSuggestion(widget.friend.id);
+      if (mounted && suggestion != null && !suggestion.dismissed) {
+        setState(() => _suggestion = suggestion);
+      }
+    } catch (_) {
+      // Not friends anymore, offline, etc. -- just don't show a card.
+    }
+  }
+
+  Future<void> _findCommonGround() async {
+    if (_requestingSuggestion) return;
+    setState(() => _requestingSuggestion = true);
+    try {
+      final suggestion = await _friendService.requestCognitiveSuggestion(widget.friend.id);
+      if (!mounted) return;
+      setState(() {
+        _requestingSuggestion = false;
+        if (suggestion != null) _suggestion = suggestion;
+      });
+      if (suggestion == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nothing to suggest right now.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _requestingSuggestion = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not check: $e')));
+    }
+  }
+
+  Future<void> _dismissSuggestion() async {
+    final suggestion = _suggestion;
+    if (suggestion == null) return;
+    setState(() => _suggestion = null); // optimistic -- this is a low-stakes, easily-repeatable action
+    try {
+      await _friendService.dismissCognitiveSuggestion(widget.friend.id, suggestion.id);
+    } catch (_) {
+      // Not worth surfacing an error for a dismiss -- worst case it reappears
+      // on next load, which is harmless.
+    }
   }
 
   Future<void> _send() async {
@@ -210,10 +281,24 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
             ),
           ],
         ),
+        actions: [
+          if (_cognitiveSharingAvailable)
+            IconButton(
+              icon: _requestingSuggestion
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.psychology_outlined),
+              tooltip: 'Find common ground',
+              onPressed: _requestingSuggestion ? null : _findCommonGround,
+            ),
+        ],
       ),
       body: Column(
         children: [
           if (_offline) const OfflineBanner(),
+          if (_suggestion != null) _CognitiveSuggestionCard(suggestion: _suggestion!, onDismiss: _dismissSuggestion),
           Expanded(child: _buildList()),
           SafeArea(child: _buildInputBar()),
         ],
@@ -277,6 +362,47 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A dismissible banner for an on-demand "find common ground" result --
+/// deliberately NOT a message bubble in the thread itself (matching Google
+/// Messages' "visible only to you" precedent cited in
+/// COGNITIVE_SHARING_INTERVENTION_PLAN.md): each side dismisses it
+/// independently, and it never becomes part of either person's permanent
+/// message history.
+class _CognitiveSuggestionCard extends StatelessWidget {
+  final CognitiveSuggestion suggestion;
+  final VoidCallback onDismiss;
+
+  const _CognitiveSuggestionCard({required this.suggestion, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.psychology_outlined, size: 18, color: AppColors.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(suggestion.suggestionText, style: TextStyle(fontSize: 13.5, color: AppColors.text)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: onDismiss,
           ),
         ],
       ),

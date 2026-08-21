@@ -13,6 +13,7 @@ import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
 import '../../widgets/island_nav_bar.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/toggle_group.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -278,7 +279,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // header. Giving the card its own "Smart features" text on
                   // top of the switch's own title was the duplicate.
                   children: [
-                    _SmartFeatureParentTile(
+                    ToggleParentTile(
+                      icon: Icons.auto_awesome_rounded,
                       title: 'Smart features',
                       subtitle: _smartFeaturesEnabled
                           ? 'Turns everything below on or off together.'
@@ -286,30 +288,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       value: _smartFeaturesEnabled,
                       onChanged: _updateSmartFeatures,
                     ),
-                    _SmartFeatureGroup(
+                    ToggleGroup(
                       children: [
-                        _SmartFeatureChildTile(
+                        ToggleChildTile(
                           title: 'Nudges',
                           subtitle: 'Overdue tasks, mood shifts, and friends you haven\'t talked to in a while.',
                           value: _nudgesEnabled,
                           enabled: _smartFeaturesEnabled,
                           onChanged: _updateNudgesEnabled,
                         ),
-                        _SmartFeatureChildTile(
+                        ToggleChildTile(
                           title: 'Cognitive intelligence',
                           subtitle: 'Learns from your conversations to give more personalized replies.',
                           value: _cognitiveIntelligenceEnabled,
                           enabled: _smartFeaturesEnabled,
                           onChanged: _updateCognitiveIntelligenceEnabled,
                         ),
-                        _SmartFeatureChildTile(
+                        ToggleChildTile(
                           title: 'Task reminder notifications',
                           subtitle: 'Email and push reminders when a task\'s reminder time arrives.',
                           value: _taskReminderNotificationsEnabled,
                           enabled: _smartFeaturesEnabled,
                           onChanged: _updateTaskReminderNotificationsEnabled,
                         ),
-                        _SmartFeatureChildTile(
+                        ToggleChildTile(
                           title: 'Tags & questions',
                           subtitle: 'Suggested topic tags and follow-up questions during live conversations.',
                           value: _tagsQuestionsEnabled,
@@ -446,105 +448,3 @@ class _SettingsCard extends StatelessWidget {
   }
 }
 
-/// The "Smart features" master row -- an icon badge + bold title makes it
-/// read as the header for the group below rather than just another switch,
-/// without needing a separate duplicate title above it.
-class _SmartFeatureParentTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _SmartFeatureParentTile({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      activeThumbColor: AppColors.accent,
-      secondary: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: AppColors.accent.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: const Icon(Icons.auto_awesome_rounded, color: AppColors.accent, size: 20),
-      ),
-      title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
-      subtitle: Text(subtitle, style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
-      value: value,
-      onChanged: onChanged,
-    );
-  }
-}
-
-/// Visually nests its children under the parent switch above: indented,
-/// with a left "rail" connecting them back to it -- the same tree
-/// convention used in Notion/Linear-style settings for "this group is
-/// governed by that switch," without needing extra explanatory copy.
-class _SmartFeatureGroup extends StatelessWidget {
-  final List<Widget> children;
-
-  const _SmartFeatureGroup({required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(left: 18, top: 2),
-      padding: const EdgeInsets.only(left: 14),
-      decoration: BoxDecoration(border: Border(left: BorderSide(color: AppColors.border, width: 2))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-    );
-  }
-}
-
-/// One row inside a _SmartFeatureGroup -- deliberately smaller/lighter than
-/// _SmartFeatureParentTile (dense layout, regular weight, smaller type) so
-/// the typographic hierarchy alone signals "child of the switch above,"
-/// even before the indentation/rail is noticed.
-///
-/// Standard parent/child toggle semantics: `enabled: false` (the parent is
-/// off) passes onChanged: null to SwitchListTile, which Flutter renders as
-/// a non-interactive, visually greyed-out row on its own -- no extra
-/// disabled-state styling needed here. The server enforces the same rule
-/// independently (see app.py's update_nudge_settings), so this is a real
-/// lock, not just a client-side suggestion.
-class _SmartFeatureChildTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool value;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-  final bool isLast;
-
-  const _SmartFeatureChildTile({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-    this.enabled = true,
-    this.isLast = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: isLast ? 0 : 2),
-      child: SwitchListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        activeThumbColor: AppColors.accent,
-        title: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.text)),
-        subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
-        value: value,
-        onChanged: enabled ? onChanged : null,
-      ),
-    );
-  }
-}
