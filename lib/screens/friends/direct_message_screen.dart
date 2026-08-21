@@ -29,7 +29,7 @@ class DirectMessageScreen extends StatefulWidget {
   State<DirectMessageScreen> createState() => _DirectMessageScreenState();
 }
 
-class _DirectMessageScreenState extends State<DirectMessageScreen> {
+class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTickerProviderStateMixin {
   final _service = MessageService();
   final _friendService = FriendService();
   final _controller = TextEditingController();
@@ -47,6 +47,24 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   bool _requestingSuggestion = false;
   CognitiveSuggestion? _suggestion;
 
+  // Event-driven auto-check: counts new messages (sent or received) since
+  // the last check, not wall-clock time -- an automatic re-check only ever
+  // fires when there's actually new conversation to reason about, so cost
+  // scales with real activity rather than a fixed polling interval. The
+  // pulse threshold is deliberately lower than the auto-fire one so the
+  // icon visibly "builds up" before the automatic check actually happens,
+  // rather than the suggestion just appearing with no warning.
+  static const _pulseAttentionThreshold = 3;
+  static const _autoCheckThreshold = 6;
+  int _messagesSinceLastCheck = 0;
+  late final AnimationController _pulseController;
+
+  bool get _shouldPulse =>
+      _cognitiveSharingAvailable &&
+      _suggestion == null &&
+      !_requestingSuggestion &&
+      _messagesSinceLastCheck >= _pulseAttentionThreshold;
+
   late final NotifyProvider _notify;
   int? _myUserId;
   DateTime? _lastTypingSentAt;
@@ -54,6 +72,8 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+      ..repeat(reverse: true);
     _notify = context.read<NotifyProvider>();
     _notify.setActiveDirectMessageFriend(widget.friend.id);
     _notify.addListener(_onNotify);
@@ -77,11 +97,23 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
 
   @override
   void dispose() {
+    _pulseController.dispose();
     _notify.setActiveDirectMessageFriend(null);
     _notify.removeListener(_onNotify);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Bumps the event-driven counter and silently auto-fires a check once it
+  /// crosses the threshold -- "silent" meaning no SnackBar if it turns out
+  /// there's nothing to suggest, unlike a manual tap.
+  void _bumpMessageActivity(int count) {
+    if (!_cognitiveSharingAvailable || count <= 0 || _suggestion != null) return;
+    setState(() => _messagesSinceLastCheck += count);
+    if (_messagesSinceLastCheck >= _autoCheckThreshold && !_requestingSuggestion) {
+      _findCommonGround(silent: true);
+    }
   }
 
   void _onNotify() {
@@ -108,6 +140,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     if (incoming.isNotEmpty) {
       _markRead(); // arrived while the thread was already open -- read immediately
       _scrollToBottom();
+      _bumpMessageActivity(incoming.length);
     }
     if (_notify.hasPendingCognitiveSuggestion(widget.friend.id)) {
       _notify.clearPendingCognitiveSuggestion(widget.friend.id);
@@ -190,7 +223,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     }
   }
 
-  Future<void> _findCommonGround() async {
+  Future<void> _findCommonGround({bool silent = false}) async {
     if (_requestingSuggestion) return;
     setState(() => _requestingSuggestion = true);
     try {
@@ -198,9 +231,10 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
       if (!mounted) return;
       setState(() {
         _requestingSuggestion = false;
+        _messagesSinceLastCheck = 0;
         if (suggestion != null) _suggestion = suggestion;
       });
-      if (suggestion == null && mounted) {
+      if (suggestion == null && !silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Nothing to suggest right now.')),
         );
@@ -208,7 +242,9 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _requestingSuggestion = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not check: $e')));
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not check: $e')));
+      }
     }
   }
 
@@ -237,6 +273,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         _sending = false;
       });
       _scrollToBottom();
+      _bumpMessageActivity(1);
     } catch (e) {
       if (!mounted) return;
       setState(() => _sending = false);
@@ -282,26 +319,69 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
           ],
         ),
         actions: [
-          if (_cognitiveSharingAvailable)
-            IconButton(
-              icon: _requestingSuggestion
-                  ? const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.psychology_outlined),
-              tooltip: 'Find common ground',
-              onPressed: _requestingSuggestion ? null : _findCommonGround,
-            ),
+          if (_cognitiveSharingAvailable) _buildSharingAction(),
         ],
       ),
       body: Column(
         children: [
           if (_offline) const OfflineBanner(),
-          if (_suggestion != null) _CognitiveSuggestionCard(suggestion: _suggestion!, onDismiss: _dismissSuggestion),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 320),
+            transitionBuilder: (child, animation) => SizeTransition(
+              sizeFactor: animation,
+              alignment: const Alignment(0, -1),
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: _suggestion != null
+                ? _CognitiveSuggestionCard(
+                    key: ValueKey(_suggestion!.id),
+                    suggestion: _suggestion!,
+                    onDismiss: _dismissSuggestion,
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-suggestion')),
+          ),
           Expanded(child: _buildList()),
           SafeArea(child: _buildInputBar()),
         ],
+      ),
+    );
+  }
+
+  /// The brain icon builds up a pulsing glow as new messages accumulate
+  /// (see _pulseAttentionThreshold) -- a visible "something might be worth
+  /// checking" cue that resolves itself automatically once
+  /// _autoCheckThreshold is hit, rather than requiring the user to notice
+  /// and remember to tap it every time.
+  Widget _buildSharingAction() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final pulse = _shouldPulse ? _pulseController.value : 0.0;
+        return Transform.scale(
+          scale: 1 + pulse * 0.12,
+          child: Container(
+            decoration: pulse > 0
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.4 * pulse),
+                        blurRadius: 8 + 8 * pulse,
+                        spreadRadius: 1 + 2 * pulse,
+                      ),
+                    ],
+                  )
+                : null,
+            child: child,
+          ),
+        );
+      },
+      child: IconButton(
+        icon: _requestingSuggestion
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            : Icon(Icons.psychology_outlined, color: _shouldPulse ? AppColors.accent : null),
+        tooltip: 'Find common ground',
+        onPressed: _requestingSuggestion ? null : _findCommonGround,
       ),
     );
   }
@@ -379,7 +459,7 @@ class _CognitiveSuggestionCard extends StatelessWidget {
   final CognitiveSuggestion suggestion;
   final VoidCallback onDismiss;
 
-  const _CognitiveSuggestionCard({required this.suggestion, required this.onDismiss});
+  const _CognitiveSuggestionCard({super.key, required this.suggestion, required this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
