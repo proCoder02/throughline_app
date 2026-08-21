@@ -48,6 +48,18 @@ class NotifyProvider extends ChangeNotifier {
   final Map<int, List<int>> _pendingDeliveryReceipts = {}; // friendId -> ids of MY messages that just reached their device
   int? _activeDirectMessageFriendId; // whichever thread (if any) is currently on-screen -- suppresses its own notification
 
+  // -- Cognitive Sharing suggestions (Phase 2/3) ---------------------------
+  // friendId -> whether a not-yet-fetched suggestion exists for that pair.
+  // The WS/FCM payload only ever carries an id (see
+  // COGNITIVE_SHARING_INTERVENTION_PLAN.md's "no raw memory ever leaves the
+  // server" guardrail) -- DirectMessageScreen calls
+  // getLatestCognitiveSuggestion to actually load the text once it sees this.
+  final Set<int> _pendingCognitiveSuggestions = {};
+
+  bool hasPendingCognitiveSuggestion(int friendId) => _pendingCognitiveSuggestions.contains(friendId);
+
+  void clearPendingCognitiveSuggestion(int friendId) => _pendingCognitiveSuggestions.remove(friendId);
+
   // friendId -> auto-clear timer; presence in this map IS the "is typing"
   // state (checked via isFriendTyping) rather than a separate Set, so there's
   // one source of truth instead of two collections that could drift apart.
@@ -287,6 +299,19 @@ class NotifyProvider extends ChangeNotifier {
           notifyListeners();
         }
         break;
+      case 'cognitive_suggestion':
+        final suggFriendId = event['friend_id'] as int?;
+        if (suggFriendId != null) {
+          _pendingCognitiveSuggestions.add(suggFriendId);
+          if (_activeDirectMessageFriendId != suggFriendId) {
+            unawaited(showLocalNotification(
+              'Cognitive Sharing',
+              'A suggestion is ready for you and this friend.',
+            ));
+          }
+          notifyListeners();
+        }
+        break;
     }
   }
 
@@ -353,5 +378,6 @@ class NotifyProvider extends ChangeNotifier {
     digestBadge = 0;
     incomingCall = null;
     foregroundNotice = null;
+    _pendingCognitiveSuggestions.clear();
   }
 }

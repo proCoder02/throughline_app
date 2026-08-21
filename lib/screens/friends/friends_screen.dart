@@ -11,8 +11,8 @@ import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/offline_banner.dart';
-import 'call_history_screen.dart';
 import 'direct_message_screen.dart';
+import 'friend_profile_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -130,9 +130,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Future<void> _openFriend(Friend f) async {
-    // Rename/remove happen inside CallHistoryScreen's app bar -- reload on
-    // return so a changed nickname or a removal shows up immediately.
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CallHistoryScreen(friend: f)));
+    // Rename/remove/cognitive-sharing all live in FriendProfileScreen --
+    // reload on return so a changed nickname or a removal shows up
+    // immediately.
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => FriendProfileScreen(friend: f)));
     if (mounted) _reload();
   }
 
@@ -269,9 +270,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
 }
 
 /// A single friend row: avatar, name, last-call summary, and two actions --
-/// chat (left) and call (right). Mood/rename/remove intentionally live one
-/// level down (CallHistoryScreen's app bar) rather than crowding this row
-/// with more icons than a glance needs.
+/// chat (left) and call (right). Mood/rename/remove/cognitive-sharing
+/// intentionally live one level down (FriendProfileScreen) rather than
+/// crowding this row with more icons than a glance needs.
 class _FriendRow extends StatelessWidget {
   final Friend friend;
   final int unreadMessages;

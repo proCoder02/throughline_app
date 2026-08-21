@@ -2,9 +2,17 @@
 <!-- Scoped cleartext exception for the Oracle Cloud backend (see lib/config.dart).
      Reachable only by plain HTTP until a domain is pointed at it for HTTPS
      (see speech2text/infra/README.md step 4). Remove this file and the
-     networkSecurityConfig reference in AndroidManifest.xml once that happens. -->
+     networkSecurityConfig reference in AndroidManifest.xml once that happens.
+
+     192.168.0.107 is the dev machine's LAN IP, added for local-backend
+     testing (flutter run with dart-define API_BASE_URL=http://192.168.0.107:5000).
+     This address can change if the machine reconnects to a different
+     network; update here if local-backend testing stops working. Harmless
+     to leave in for a debug build; not something a real release build
+     should ship with long-term. -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">129.213.21.239</domain>
+        <domain includeSubdomains="false">192.168.0.107</domain>
     </domain-config>
 </network-security-config>
