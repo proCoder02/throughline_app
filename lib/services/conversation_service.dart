@@ -93,8 +93,17 @@ class ConversationService {
     return messages;
   }
 
-  Future<String> sendGlobalChat(String prompt) async {
-    final r = await _api.dio.post('/chat/global', data: {'prompt': prompt});
+  /// lat/lon are optional -- only attached when the global chat screen
+  /// already has a fresh device location on hand (see its own
+  /// _maybeGetLocation, which never blocks sending on a permission prompt
+  /// or a slow GPS fix). The backend decides for itself whether the
+  /// message actually needed location at all.
+  Future<String> sendGlobalChat(String prompt, {double? lat, double? lon}) async {
+    final r = await _api.dio.post('/chat/global', data: {
+      'prompt': prompt,
+      if (lat != null) 'lat': lat,
+      if (lon != null) 'lon': lon,
+    });
     final reply = (r.data['reply'] as String?) ?? 'No response.';
     final now = DateTime.now();
     await _cache.appendGlobalMessages([

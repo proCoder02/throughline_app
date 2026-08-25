@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- Global chat's location-aware "nearby" suggestions (geolocator) --
+         coarse is enough for a several-hundred-meter-radius place search,
+         and is the lower-friction permission prompt; fine is requested too
+         since some OEMs only offer both together in the system dialog. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <!-- Android 13+ requires this declared explicitly; firebase_messaging's
          requestPermission() call in PushService is what actually prompts
          the user at runtime. -->
