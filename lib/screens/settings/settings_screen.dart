@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../main.dart' show themeProvider;
 import '../../models/category.dart';
 import '../../services/category_service.dart';
+import '../../services/commerce_service.dart';
 import '../../services/settings_service.dart';
+import '../../services/upload_service.dart';
 import '../../state/auth_provider.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
@@ -13,6 +18,7 @@ import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
 import '../../widgets/island_nav_bar.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/photo_viewer.dart';
 import '../../widgets/toggle_group.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -22,10 +28,26 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   final _service = SettingsService();
   final _categoryService = CategoryService();
+  final _commerceService = CommerceService();
+  final _uploadService = UploadService();
+  final _imagePicker = ImagePicker();
   final _newCategory = TextEditingController();
+
+  // Object storage (Cloudflare R2) -- same null-until-known/hide-if-disabled
+  // pattern as _swiggyStatus below (see GET /uploads/status).
+  bool _uploadsEnabled = false;
+  bool _uploadingPicture = false;
+
+  // Cognitive Commerce (Swiggy MCP) -- null while unknown, {'enabled': false}
+  // when SWIGGY_MCP_ENABLED is off server-side, in which case this whole
+  // card renders as nothing. Refreshed on app resume too: connecting opens
+  // a system browser (see CommerceService.connect), so there's no in-app
+  // callback moment to hook -- resuming the app is the next best signal
+  // that the OAuth flow may have just finished.
+  Map<String, dynamic>? _swiggyStatus;
 
   String? _personalization;
   String? _friendCode;
@@ -56,6 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Show the on-device copy instantly if there is one, then always refresh
     // from the network in the background -- same cache-first pattern as
     // ChatsScreen, so this tab still shows last-known settings offline
@@ -79,6 +102,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _load();
     _loadCategories();
     _loadNudgeSettings();
+    _loadSwiggyStatus();
+    _uploadService.status().then((s) {
+      if (mounted) setState(() => _uploadsEnabled = s['enabled'] == true);
+    }).catchError((_) {});
+  }
+
+  Future<void> _pickProfilePicture() async {
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked == null || !mounted) return;
+    setState(() => _uploadingPicture = true);
+    try {
+      final file = File(picked.path);
+      final ext = picked.path.split('.').last.toLowerCase();
+      final contentType = ext == 'png' ? 'image/png' : ext == 'webp' ? 'image/webp' : 'image/jpeg';
+      final objectKey = await _uploadService.uploadFile(file, 'profile_picture', contentType);
+      final url = await _uploadService.confirmProfilePicture(objectKey);
+      if (!mounted) return;
+      context.read<AuthProvider>().setProfilePictureUrl(url);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile picture updated')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update profile picture: $e')));
+    } finally {
+      if (mounted) setState(() => _uploadingPicture = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Connecting Swiggy opens a system browser (see CommerceService.connect)
+    // -- there's no in-app callback moment, so refreshing on resume is the
+    // next best signal that the OAuth flow may have just finished.
+    if (state == AppLifecycleState.resumed) _loadSwiggyStatus();
+  }
+
+  Future<void> _loadSwiggyStatus() async {
+    try {
+      final status = await _commerceService.status();
+      if (mounted) setState(() => _swiggyStatus = status);
+    } catch (_) {
+      if (mounted) setState(() => _swiggyStatus = {'enabled': false});
+    }
+  }
+
+  Future<void> _connectSwiggy(String server) => _commerceService.connect(server);
+
+  Future<void> _disconnectSwiggy(String server) async {
+    await _commerceService.disconnect(server);
+    _loadSwiggyStatus();
   }
 
   Future<void> _load() async {
@@ -227,7 +305,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     Row(
                       children: [
-                        InitialAvatar(name: auth.username ?? '?', size: 44),
+                        Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            GestureDetector(
+                              // WhatsApp-style: tap the photo itself to view
+                              // it full-screen once one exists; the camera
+                              // badge below is the only way to change it, so
+                              // the two actions don't fight over the same tap.
+                              onTap: _uploadingPicture
+                                  ? null
+                                  : (auth.profilePictureUrl != null
+                                      ? () => showPhotoViewer(context, imageUrl: auth.profilePictureUrl!)
+                                      : (_uploadsEnabled ? _pickProfilePicture : null)),
+                              child: Opacity(
+                                opacity: _uploadingPicture ? 0.5 : 1,
+                                child: InitialAvatar(name: auth.username ?? '?', size: 44, imageUrl: auth.profilePictureUrl),
+                              ),
+                            ),
+                            if (_uploadsEnabled)
+                              GestureDetector(
+                                onTap: _uploadingPicture ? null : _pickProfilePicture,
+                                child: Container(
+                                  width: 18, height: 18,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accent, shape: BoxShape.circle,
+                                    border: Border.all(color: AppColors.panel, width: 2),
+                                  ),
+                                  child: _uploadingPicture
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(3),
+                                          child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white),
+                                        )
+                                      : const Icon(Icons.camera_alt, size: 10, color: Colors.white),
+                                ),
+                              ),
+                          ],
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -386,6 +500,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
+                if (_swiggyStatus?['enabled'] == true)
+                  _SettingsCard(
+                    title: 'Swiggy',
+                    subtitle: 'Connect your Swiggy account so the assistant can suggest real options and '
+                        'order for you when you ask -- nothing is ever ordered without you confirming it first.',
+                    children: [
+                      for (final entry in const {
+                        'food': 'Swiggy Food',
+                        'im': 'Swiggy Instamart',
+                        'dineout': 'Swiggy Dineout',
+                      }.entries)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Expanded(child: Text(entry.value, style: const TextStyle(fontSize: 15))),
+                              if ((_swiggyStatus?['accounts']?[entry.key]?['connected'] as bool?) ?? false)
+                                OutlinedButton(
+                                  onPressed: () => _disconnectSwiggy(entry.key),
+                                  child: const Text('Disconnect'),
+                                )
+                              else
+                                ElevatedButton(
+                                  onPressed: () => _connectSwiggy(entry.key),
+                                  child: const Text('Connect'),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,

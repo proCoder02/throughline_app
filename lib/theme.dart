@@ -31,6 +31,23 @@ class AppColors {
   static const danger = Color(0xFFDC3545);
   static const railIconActive = Color(0xFF00A884);
   static const unreadBadge = Color(0xFFEA0038);
+
+  // -- 1:1 direct-message screen only (see direct_message_screen.dart) --
+  // A dedicated warm-gradient "wallpaper" + glassy, tail-less bubble
+  // treatment, kept separate from bgApp/panel/chatBg/bubbleIn/bubbleOut
+  // above so ChatThreadScreen's existing WhatsApp-style look stays exactly
+  // as-is -- this redesign is scoped to real 1:1 friend chat only.
+  static List<Color> get dmGradient => isAppDarkMode
+      ? const [Color(0xFF1A1410), Color(0xFF2B1B12), Color(0xFF150F0C)]
+      : const [Color(0xFFFDF8F1), Color(0xFFF3E6D3), Color(0xFFFDF8F1)];
+  static Color get dmBubbleIn => isAppDarkMode ? const Color(0xFF251C16) : const Color(0xFFFFFFFF);
+  static Color get dmBubbleOut => isAppDarkMode ? const Color(0xFF1B332C) : const Color(0xFFDCF3EC);
+  static Color get dmBubbleBorder =>
+      isAppDarkMode ? Colors.white.withValues(alpha: 0.07) : Colors.black.withValues(alpha: 0.05);
+  static Color get dmText => isAppDarkMode ? const Color(0xFFF3EAE1) : const Color(0xFF2B211A);
+  static Color get dmTextSoft => isAppDarkMode ? const Color(0xFFA79A8D) : const Color(0xFF8A7C6E);
+  static Color get dmPillFill =>
+      isAppDarkMode ? Colors.white.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.85);
 }
 
 /// Builds a ThemeData reflecting whatever isAppDarkMode currently is --

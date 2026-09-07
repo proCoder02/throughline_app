@@ -93,15 +93,33 @@ class ConversationService {
     return messages;
   }
 
-  Future<String> sendGlobalChat(String prompt) async {
-    final r = await _api.dio.post('/chat/global', data: {'prompt': prompt});
+  /// lat/lon are optional -- only attached when the global chat screen
+  /// already has a fresh device location on hand (see its own
+  /// _maybeGetLocation, which never blocks sending on a permission prompt
+  /// or a slow GPS fix). The backend decides for itself whether the
+  /// message actually needed location at all.
+  ///
+  /// Returns both the reply text and an optional Cognitive Commerce
+  /// (Swiggy MCP) action_card -- present only when the backend actually
+  /// found real, orderable results for this message.
+  Future<(String reply, Map<String, dynamic>? actionCard)> sendGlobalChat(
+    String prompt, {
+    double? lat,
+    double? lon,
+  }) async {
+    final r = await _api.dio.post('/chat/global', data: {
+      'prompt': prompt,
+      if (lat != null) 'lat': lat,
+      if (lon != null) 'lon': lon,
+    });
     final reply = (r.data['reply'] as String?) ?? 'No response.';
+    final actionCard = r.data['action_card'] as Map<String, dynamic>?;
     final now = DateTime.now();
     await _cache.appendGlobalMessages([
       ChatMessage(role: 'user', content: prompt, createdAt: now),
-      ChatMessage(role: 'assistant', content: reply, createdAt: now),
+      ChatMessage(role: 'assistant', content: reply, createdAt: now, actionCard: actionCard),
     ]);
-    return reply;
+    return (reply, actionCard);
   }
 
   /// Companion to sendGlobalChat -- sends an image (e.g. a bill photo) with

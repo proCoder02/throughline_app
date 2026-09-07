@@ -2,6 +2,7 @@ class Friend {
   final int id;
   final String username;
   final String? nickname;
+  final String? profilePictureUrl;
   final DateTime? lastCallAt;
   final bool? lastCallOutgoing;
   final int callCount;
@@ -10,6 +11,7 @@ class Friend {
     required this.id,
     required this.username,
     this.nickname,
+    this.profilePictureUrl,
     this.lastCallAt,
     this.lastCallOutgoing,
     this.callCount = 0,
@@ -23,6 +25,7 @@ class Friend {
         id: json['id'],
         username: json['username'],
         nickname: json['nickname'] as String?,
+        profilePictureUrl: json['profile_picture_url'] as String?,
         lastCallAt: json['last_call_at'] != null ? DateTime.parse(json['last_call_at']).toLocal() : null,
         lastCallOutgoing: json['last_call_outgoing'] as bool?,
         callCount: json['call_count'] ?? 0,
@@ -32,6 +35,7 @@ class Friend {
         'id': id,
         'username': username,
         'nickname': nickname,
+        'profile_picture_url': profilePictureUrl,
         'last_call_at': lastCallAt?.toUtc().toIso8601String(),
         'last_call_outgoing': lastCallOutgoing,
         'call_count': callCount,

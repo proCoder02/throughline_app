@@ -16,6 +16,7 @@ class AuthProvider extends ChangeNotifier {
   bool isAuthenticated = false;
   String? username;
   int? userId;
+  String? profilePictureUrl;
 
   /// Optimistic: a stored token is trusted immediately (no blocking network
   /// call), so the app's first frame never waits on a round-trip -- if it
@@ -50,6 +51,7 @@ class AuthProvider extends ChangeNotifier {
     if (me != null) {
       username = me['username'];
       userId = me['id'];
+      profilePictureUrl = me['profile_picture_url'] as String?;
       notifyListeners();
     }
   }
@@ -60,6 +62,7 @@ class AuthProvider extends ChangeNotifier {
       isAuthenticated = true;
       username = r['username'];
       userId = r['id'];
+      profilePictureUrl = r['profile_picture_url'] as String?;
       notifyListeners();
       return null;
     } on DioException catch (e) {
@@ -83,11 +86,21 @@ class AuthProvider extends ChangeNotifier {
       isAuthenticated = true;
       username = r['username'];
       userId = r['id'];
+      profilePictureUrl = r['profile_picture_url'] as String?;
       notifyListeners();
       return null;
     } on DioException catch (e) {
       return _errorMessage(e);
     }
+  }
+
+  /// Called after a successful profile-picture upload (see SettingsScreen)
+  /// -- patches state in place with the upload's own response, same
+  /// reasoning as the web client's useAuth.updateUser: no need for a round
+  /// trip back to /me when the new URL is already in hand.
+  void setProfilePictureUrl(String url) {
+    profilePictureUrl = url;
+    notifyListeners();
   }
 
   Future<void> logout() async {
@@ -96,6 +109,7 @@ class AuthProvider extends ChangeNotifier {
     isAuthenticated = false;
     username = null;
     userId = null;
+    profilePictureUrl = null;
     await LocalCache.instance.clear();
     notifyListeners();
   }
@@ -105,6 +119,7 @@ class AuthProvider extends ChangeNotifier {
     isAuthenticated = false;
     username = null;
     userId = null;
+    profilePictureUrl = null;
     LocalCache.instance.clear();
     notifyListeners();
   }

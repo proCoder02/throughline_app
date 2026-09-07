@@ -47,5 +47,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used to suggest nearby places (shops, restaurants, trails) when you ask the assistant about what's around you.</string>
 </dict>
 </plist>

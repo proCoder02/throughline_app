@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -41,6 +43,45 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   String _quoteSnippet(ChatMessage message) {
     final oneLine = message.content.replaceAll('\n', ' ').trim();
     return oneLine.length > 80 ? '${oneLine.substring(0, 80)}...' : oneLine;
+  }
+
+  /// Best-effort, silent, and fast on purpose -- this must never turn a
+  /// normal text message into a permission-dialog interruption or a
+  /// multi-second stall. Only actually prompts for permission when the
+  /// user's message looks like it wants a location at all (see
+  /// _looksLocationAware); every other message skips this entirely, with
+  /// zero location-related delay or dialog. A denied/unavailable/slow fix
+  /// just means the backend gets no lat/lon and asks the user to share
+  /// their location or name a place instead -- server already handles
+  /// that gracefully.
+  static final _locationKeywordRe = RegExp(
+    r'\bnear(?:by)?\b|\baround\s+(?:here|me)\b|\bclose\s+to\s+me\b|\bnearest\b|\btrek\b|\bhik(?:e|ing)\b|'
+    r'\btrail\b|\bshop(?:ping)?\b|\brestaurant\b|\bcafe\b|\bcoffee\b|\bpark\b',
+    caseSensitive: false,
+  );
+
+  bool _looksLocationAware(String text) => _locationKeywordRe.hasMatch(text);
+
+  Future<Position?> _maybeGetLocation(String text) async {
+    if (!_looksLocationAware(text)) return null;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return null;
+      }
+      // Low accuracy is deliberate -- a "nearby shop" search only needs
+      // city-block precision, and low-accuracy fixes resolve far faster
+      // than a full GPS lock, keeping this from noticeably delaying send.
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.low, timeLimit: Duration(seconds: 4)),
+      );
+    } catch (_) {
+      return null; // service error, timeout, etc. -- send proceeds without location
+    }
   }
 
   @override
@@ -114,10 +155,18 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     _scrollToEnd();
     _promptController.clear();
     try {
-      final reply = await _service.sendGlobalChat(textForBackend);
+      final position = await _maybeGetLocation(textForBackend);
+      final (reply, actionCard) = await _service.sendGlobalChat(
+        textForBackend,
+        lat: position?.latitude,
+        lon: position?.longitude,
+      );
       if (!mounted) return;
       setState(() {
-        _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
+        _messages = [
+          ..._messages,
+          ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now(), actionCard: actionCard),
+        ];
       });
       _scrollToEnd();
     } catch (_) {

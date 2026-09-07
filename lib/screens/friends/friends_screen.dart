@@ -253,7 +253,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 _callSelection.remove(f.id);
               }
             }),
-            secondary: InitialAvatar(name: f.displayName),
+            secondary: InitialAvatar(name: f.displayName, imageUrl: f.profilePictureUrl),
             title: Text(f.displayName),
           );
         }
@@ -298,7 +298,7 @@ class _FriendRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              InitialAvatar(name: friend.displayName),
+              InitialAvatar(name: friend.displayName, imageUrl: friend.profilePictureUrl),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
