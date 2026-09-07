@@ -156,14 +156,17 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     _promptController.clear();
     try {
       final position = await _maybeGetLocation(textForBackend);
-      final reply = await _service.sendGlobalChat(
+      final (reply, actionCard) = await _service.sendGlobalChat(
         textForBackend,
         lat: position?.latitude,
         lon: position?.longitude,
       );
       if (!mounted) return;
       setState(() {
-        _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
+        _messages = [
+          ..._messages,
+          ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now(), actionCard: actionCard),
+        ];
       });
       _scrollToEnd();
     } catch (_) {

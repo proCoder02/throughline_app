@@ -32,15 +32,31 @@ Color colorForName(String name) {
 }
 
 /// Solid circle (color varies per-person, see colorForName), white uppercase
-/// first letter — no photos, per spec.
+/// first letter -- unless `imageUrl` is set (a real R2-hosted profile
+/// picture, see MEDIA_STORAGE_PLAN.md), in which case that's shown instead.
+/// This is the single render point for every avatar in the app, same
+/// reasoning as the web client's Avatar.jsx: extend the one shared widget
+/// so a profile picture appears everywhere at once, not one screen at a time.
 class InitialAvatar extends StatelessWidget {
   final String name;
   final double size;
+  final String? imageUrl;
 
-  const InitialAvatar({super.key, required this.name, this.size = 44});
+  const InitialAvatar({super.key, required this.name, this.size = 44, this.imageUrl});
 
   @override
   Widget build(BuildContext context) {
+    if (imageUrl != null && imageUrl!.isNotEmpty) {
+      return CircleAvatar(
+        radius: size / 2,
+        backgroundColor: colorForName(name),
+        backgroundImage: NetworkImage(imageUrl!),
+        // If the image 404s (e.g. deleted from R2) this callback just
+        // leaves the colored background showing behind it rather than
+        // crashing or showing Flutter's default broken-image error widget.
+        onBackgroundImageError: (_, __) {},
+      );
+    }
     final letter = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
     return CircleAvatar(
       radius: size / 2,

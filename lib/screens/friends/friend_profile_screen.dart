@@ -9,6 +9,7 @@ import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/photo_viewer.dart';
 import '../../widgets/toggle_group.dart';
 import 'direct_message_screen.dart';
 
@@ -119,6 +120,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         id: _friend.id,
         username: _friend.username,
         nickname: nickname,
+        profilePictureUrl: _friend.profilePictureUrl,
         lastCallAt: _friend.lastCallAt,
         lastCallOutgoing: _friend.lastCallOutgoing,
         callCount: _friend.callCount,
@@ -165,7 +167,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Center(
             child: Column(
               children: [
-                InitialAvatar(name: _friend.displayName, size: 88),
+                GestureDetector(
+                  onTap: _friend.profilePictureUrl != null
+                      ? () => showPhotoViewer(context, imageUrl: _friend.profilePictureUrl!)
+                      : null,
+                  child: InitialAvatar(name: _friend.displayName, size: 88, imageUrl: _friend.profilePictureUrl),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   _friend.displayName,

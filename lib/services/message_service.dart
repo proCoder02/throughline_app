@@ -22,8 +22,24 @@ class MessageService {
     return items;
   }
 
-  Future<DirectMessage> send(int friendId, String content) async {
-    final r = await _api.dio.post('/friends/$friendId/messages', data: {'content': content});
+  /// attachment fields (if any) are already-uploaded-to-R2 URLs by the time
+  /// this is called -- see UploadService + DirectMessageScreen's attach
+  /// flow. This route is a plain JSON POST regardless of whether the
+  /// message carries an attachment; the upload itself is a separate,
+  /// earlier step (POST /uploads/presign + a direct PUT to R2).
+  Future<DirectMessage> send(
+    int friendId,
+    String content, {
+    String? attachmentUrl,
+    String? attachmentType,
+    String? thumbnailDataUrl,
+  }) async {
+    final r = await _api.dio.post('/friends/$friendId/messages', data: {
+      'content': content,
+      if (attachmentUrl != null) 'attachment_url': attachmentUrl,
+      if (attachmentType != null) 'attachment_type': attachmentType,
+      if (thumbnailDataUrl != null) 'thumbnail_data_url': thumbnailDataUrl,
+    });
     final message = DirectMessage.fromJson(r.data as Map<String, dynamic>);
     await _cache.appendDirectMessages(friendId, [message]);
     return message;

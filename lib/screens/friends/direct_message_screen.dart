@@ -1,18 +1,44 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/direct_message.dart';
 import '../../models/friend.dart';
 import '../../services/friend_service.dart';
 import '../../services/message_service.dart';
+import '../../services/upload_service.dart';
 import '../../state/auth_provider.dart';
 import '../../state/notify_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/fade_slide_in.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/photo_viewer.dart';
 import '../../widgets/tap_bounce.dart';
+
+/// Best-effort file-extension -> MIME type -- good enough for R2's content
+/// type and for this screen's own image/video/file branching; a wrong
+/// guess for an obscure document extension only affects how a browser
+/// treats the download, never whether the upload/send itself works (the
+/// backend's chat_file purpose accepts any content type -- see storage.py).
+String _guessMimeType(String path) {
+  final ext = path.split('.').last.toLowerCase();
+  const map = {
+    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif',
+    'mp4': 'video/mp4', 'mov': 'video/quicktime', 'webm': 'video/webm',
+    'pdf': 'application/pdf', 'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'txt': 'text/plain', 'zip': 'application/zip',
+  };
+  return map[ext] ?? 'application/octet-stream';
+}
 
 /// Real-time 1:1 text chat with a friend -- distinct from ChatThreadScreen
 /// (which is a solo Listen conversation's LLM Q&A). Cache-first load (same
@@ -32,6 +58,8 @@ class DirectMessageScreen extends StatefulWidget {
 class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTickerProviderStateMixin {
   final _service = MessageService();
   final _friendService = FriendService();
+  final _uploadService = UploadService();
+  final _imagePicker = ImagePicker();
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
 
@@ -41,6 +69,27 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
   Object? _loadError;
   bool _offline = false;
   bool _hasText = false;
+
+  // Only messages at/after this index get the entrance fade+slide (see
+  // _MessageBubble below) -- set once, from whichever load path (cache or
+  // network) fills _messages first, so the existing history never
+  // re-plays its "arriving" animation on every rebuild, only genuinely new
+  // messages appended afterward (live WS/send) do.
+  int _animateFromIndex = 0;
+  bool _baselineSet = false;
+
+  void _setAnimationBaseline(int length) {
+    if (_baselineSet) return;
+    _baselineSet = true;
+    _animateFromIndex = length;
+  }
+
+  // Object storage (Cloudflare R2) attachments -- see MEDIA_STORAGE_PLAN.md.
+  // Same null-until-known/hide-if-disabled pattern as every other gated
+  // feature in this app (GET /uploads/status).
+  bool _uploadsEnabled = false;
+  bool _uploadingAttachment = false;
+  double _uploadProgress = 0;
 
   // -- Cognitive Sharing (Phase 2/3) --------------------------------------
   bool _cognitiveSharingAvailable = false; // both sides >= 'limited' -- gates the AppBar action
@@ -88,11 +137,15 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
     if (cached != null) {
       _messages = cached;
       _loading = false;
+      _setAnimationBaseline(cached.length);
     }
     _load();
     _markRead();
     _loadCognitiveSharingAvailability();
     _loadLatestSuggestion();
+    _uploadService.status().then((s) {
+      if (mounted) setState(() => _uploadsEnabled = s['enabled'] == true);
+    }).catchError((_) {});
   }
 
   @override
@@ -171,6 +224,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
         _loading = false;
         _loadError = null;
         _offline = false;
+        _setAnimationBaseline(items.length);
       });
       // Safety-net backfill: NotifyProvider's ackDelivered already fires for
       // every live/reconnect-replayed 'direct_message' event (see its own
@@ -263,6 +317,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
+    HapticFeedback.lightImpact();
     _controller.clear();
     setState(() => _sending = true);
     try {
@@ -278,6 +333,183 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
       if (!mounted) return;
       setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not send: $e')));
+    }
+  }
+
+  /// Bottom sheet offering the three attachment kinds -- mirrors the
+  /// existing vision-chat feature's picker but with a second/third option
+  /// (video, file) that feature never needed.
+  Future<void> _pickAttachment() async {
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(children: [
+          ListTile(
+            leading: const Icon(Icons.photo_outlined),
+            title: const Text('Photo'),
+            onTap: () => Navigator.of(ctx).pop('image'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.videocam_outlined),
+            title: const Text('Video'),
+            onTap: () => Navigator.of(ctx).pop('video'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.insert_drive_file_outlined),
+            title: const Text('Document'),
+            onTap: () => Navigator.of(ctx).pop('file'),
+          ),
+        ]),
+      ),
+    );
+    if (kind == null || !mounted) return;
+
+    File file;
+    String mimeType;
+    if (kind == 'image') {
+      final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (picked == null) return;
+      file = File(picked.path);
+      mimeType = _guessMimeType(picked.path);
+    } else if (kind == 'video') {
+      final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
+      if (picked == null) return;
+      file = File(picked.path);
+      mimeType = _guessMimeType(picked.path);
+    } else {
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
+      final path = result?.files.single.path;
+      if (path == null) return;
+      file = File(path);
+      mimeType = _guessMimeType(path);
+    }
+    if (!mounted) return;
+
+    final caption = await _showAttachmentPreviewSheet(file, kind);
+    if (caption == null) return; // cancelled
+    _sendAttachment(file, kind, mimeType, caption);
+  }
+
+  /// WhatsApp-style preview-before-send, same shape as the vision-chat
+  /// feature's sheet -- but the caption here is optional (an attachment
+  /// with no caption is a normal, complete message), not required.
+  Future<String?> _showAttachmentPreviewSheet(File file, String kind) {
+    final controller = TextEditingController();
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (kind == 'image')
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(file, height: 200, fit: BoxFit.cover),
+                  )
+                else
+                  Container(
+                    height: 80,
+                    decoration: BoxDecoration(color: AppColors.panel, borderRadius: BorderRadius.circular(8)),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 16),
+                        Icon(kind == 'video' ? Icons.videocam_outlined : Icons.insert_drive_file_outlined,
+                            color: AppColors.textSoft),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(file.path.split(Platform.pathSeparator).last, overflow: TextOverflow.ellipsis)),
+                        const SizedBox(width: 16),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Add a caption (optional)',
+                    filled: true,
+                    fillColor: AppColors.panel,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(controller.text.trim()),
+                        child: const Text('Send'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Requires being online now -- unlike a plain text message, an
+  /// attachment's bytes can't be queued for a later retry without keeping
+  /// the whole file on-device for a background upload, which is real added
+  /// complexity for a case (losing connectivity mid-pick) rare enough to
+  /// just ask the user to try again.
+  Future<void> _sendAttachment(File file, String kind, String mimeType, String caption) async {
+    setState(() {
+      _uploadingAttachment = true;
+      _uploadProgress = 0;
+    });
+    try {
+      final purpose = kind == 'image' ? 'chat_image' : (kind == 'video' ? 'chat_video' : 'chat_file');
+      final objectKey = await _uploadService.uploadFile(
+        file, purpose, mimeType,
+        onProgress: (p) { if (mounted) setState(() => _uploadProgress = p); },
+      );
+      final attachmentUrl = await _uploadService.confirmUpload(objectKey, purpose);
+      // Only images get a real thumbnail (see MEDIA_STORAGE_PLAN.md) --
+      // video/file attachments render as a plain download card instead of
+      // needing a captured frame, which would need extra packages
+      // (video_thumbnail/video_player) this app doesn't have yet.
+      String? thumbnailDataUrl;
+      if (kind == 'image') {
+        try {
+          thumbnailDataUrl = await _uploadService.makeThumbnailDataUrl(file);
+        } catch (_) {
+          thumbnailDataUrl = null; // no thumbnail is a degraded-but-fine outcome, not a failed send
+        }
+      }
+      final message = await _service.send(
+        widget.friend.id, caption,
+        attachmentUrl: attachmentUrl, attachmentType: mimeType, thumbnailDataUrl: thumbnailDataUrl,
+      );
+      if (!mounted) return;
+      setState(() {
+        _messages = [...(_messages ?? []), message];
+      });
+      _scrollToBottom();
+      _bumpMessageActivity(1);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not send attachment: $e')));
+    } finally {
+      if (mounted) setState(() => _uploadingAttachment = false);
     }
   }
 
@@ -300,7 +532,12 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
       appBar: AppBar(
         title: Row(
           children: [
-            InitialAvatar(name: widget.friend.displayName, size: 34),
+            GestureDetector(
+              onTap: widget.friend.profilePictureUrl != null
+                  ? () => showPhotoViewer(context, imageUrl: widget.friend.profilePictureUrl!)
+                  : null,
+              child: InitialAvatar(name: widget.friend.displayName, size: 34, imageUrl: widget.friend.profilePictureUrl),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -411,37 +648,54 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
         color: AppColors.panel,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              minLines: 1,
-              maxLines: 5,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(hintText: 'Message', isDense: true),
-              onSubmitted: (_) => _send(),
+          if (_uploadingAttachment)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: LinearProgressIndicator(value: _uploadProgress, minHeight: 3),
             ),
-          ),
-          const SizedBox(width: 8),
-          TapBounce(
-            child: Material(
-              color: _hasText ? AppColors.accent : AppColors.border,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _hasText && !_sending ? _send : null,
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: _sending
-                      ? const SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Icon(Icons.send_rounded, color: _hasText ? Colors.white : AppColors.textSoft, size: 20),
+          Row(
+            children: [
+              if (_uploadsEnabled)
+                IconButton(
+                  icon: const Icon(Icons.attach_file),
+                  color: AppColors.textSoft,
+                  tooltip: 'Attach a photo, video, or file',
+                  onPressed: _uploadingAttachment ? null : _pickAttachment,
+                ),
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 5,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(hintText: 'Message', isDense: true),
+                  onSubmitted: (_) => _send(),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              TapBounce(
+                child: Material(
+                  color: _hasText ? AppColors.accent : AppColors.border,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _hasText && !_sending ? _send : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: _sending
+                          ? const SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Icon(Icons.send_rounded, color: _hasText ? Colors.white : AppColors.textSoft, size: 20),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -542,8 +796,20 @@ class _MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(message.content, style: TextStyle(fontSize: 15, color: AppColors.text)),
-            const SizedBox(height: 3),
+            if (message.attachmentUrl != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: _AttachmentContent(
+                  url: message.attachmentUrl!,
+                  type: message.attachmentType,
+                  thumbnailDataUrl: message.thumbnailDataUrl,
+                  summary: message.attachmentSummary,
+                ),
+              ),
+            if (message.content.isNotEmpty) ...[
+              Text(message.content, style: TextStyle(fontSize: 15, color: AppColors.text)),
+              const SizedBox(height: 3),
+            ],
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -557,6 +823,133 @@ class _MessageBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Renders an R2-backed attachment (see MEDIA_STORAGE_PLAN.md) by MIME
+/// type. Images show `thumbnailDataUrl` immediately (decoded inline, no
+/// network wait) and swap to the full network image once it loads; video
+/// and generic files render as a tappable download/open card (no inline
+/// video playback in this pass -- that needs video_player/video_thumbnail,
+/// which aren't dependencies of this app yet). If the full-resolution
+/// `url` 404s (e.g. expired off R2 via an Object Lifecycle Rule), an image
+/// falls back to just the thumbnail with a small label instead of
+/// Flutter's default broken-image icon.
+class _AttachmentContent extends StatefulWidget {
+  final String url;
+  final String? type;
+  final String? thumbnailDataUrl;
+  // Cognitive Sharing add-on: a 20-30 word summary, present only when both
+  // people in this DM pair have sharing turned on (see DirectMessage's own
+  // doc comment and app.py's _generate_attachment_summary).
+  final String? summary;
+
+  const _AttachmentContent({required this.url, this.type, this.thumbnailDataUrl, this.summary});
+
+  @override
+  State<_AttachmentContent> createState() => _AttachmentContentState();
+}
+
+class _AttachmentContentState extends State<_AttachmentContent> {
+  bool _broken = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = widget.type ?? '';
+
+    if (type.startsWith('image/')) {
+      if (_broken) {
+        if (widget.thumbnailDataUrl == null) {
+          return Text('Photo no longer available', style: TextStyle(fontSize: 12.5, color: AppColors.textSoft));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Opacity(
+              opacity: 0.6,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(base64Decode(widget.thumbnailDataUrl!.split(',').last), fit: BoxFit.cover),
+              ),
+            ),
+            Text('Photo no longer available', style: TextStyle(fontSize: 11, color: AppColors.textSoft)),
+          ],
+        );
+      }
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240, maxHeight: 320),
+          child: Image.network(
+            widget.url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              // Can't call setState during build -- defer to next frame.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _broken = true);
+              });
+              return widget.thumbnailDataUrl != null
+                  ? Image.memory(base64Decode(widget.thumbnailDataUrl!.split(',').last), fit: BoxFit.cover)
+                  : const SizedBox(width: 160, height: 120);
+            },
+          ),
+        ),
+      );
+    }
+
+    final isVideo = type.startsWith('video/');
+    final segments = Uri.tryParse(widget.url)?.pathSegments ?? const <String>[];
+    final filename = segments.isNotEmpty ? segments.last : 'file';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: () => launchUrl(Uri.parse(widget.url), mode: LaunchMode.externalApplication),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 220),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.bgApp,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isVideo ? Icons.videocam_outlined : Icons.insert_drive_file_outlined, size: 20, color: AppColors.textSoft),
+                const SizedBox(width: 8),
+                Flexible(child: Text(isVideo ? 'Video' : filename, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+                const SizedBox(width: 6),
+                Icon(Icons.open_in_new, size: 14, color: AppColors.textSoft),
+              ],
+            ),
+          ),
+        ),
+        if (widget.summary != null && widget.summary!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 2),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.psychology_outlined, size: 13, color: AppColors.accent),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      widget.summary!,
+                      style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textSoft, height: 1.3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

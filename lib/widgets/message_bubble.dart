@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/chat_message.dart';
 import '../theme.dart';
+import 'action_card.dart';
 import 'formatted_text.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -47,6 +48,9 @@ class MessageBubble extends StatelessWidget {
               const SizedBox(height: 6),
             ],
             FormattedText(message.content, style: TextStyle(color: AppColors.text)),
+            // Cognitive Commerce (Swiggy MCP) -- only present on an
+            // assistant reply that actually found real, orderable results.
+            if (message.actionCard != null) ActionCard(card: message.actionCard!),
             const SizedBox(height: 2),
             Text(
               DateFormat.Hm().format(message.createdAt),

@@ -19,6 +19,17 @@ class ChatMessage {
   // always null for any message loaded from LocalCache or from the server,
   // and only ever set for a message sent earlier in the current app session.
   final File? localImage;
+  // Cognitive Commerce (Swiggy MCP): the "want me to order?" card the
+  // backend attaches to a reply, as raw JSON (id/server/need/items) --
+  // ActionCard renders it generically. Unlike localImage, this DOES
+  // round-trip through toJson()/fromJson(): a suggestion should still be
+  // tappable after an app restart, not just for the rest of the current
+  // session. The backend's own resolved_at guard (see
+  // commerce/swiggy_adapter.py confirm_action/dismiss_action) is what
+  // actually prevents acting twice on a stale/already-resolved card --
+  // this field is just display data, never trusted as proof an action is
+  // still valid.
+  final Map<String, dynamic>? actionCard;
 
   ChatMessage({
     required this.role,
@@ -26,6 +37,7 @@ class ChatMessage {
     required this.createdAt,
     this.replyToPreview,
     this.localImage,
+    this.actionCard,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -33,6 +45,7 @@ class ChatMessage {
         content: json['content'],
         createdAt: DateTime.parse(json['created_at']).toLocal(),
         replyToPreview: json['reply_to_preview'] as String?,
+        actionCard: json['action_card'] as Map<String, dynamic>?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -40,5 +53,6 @@ class ChatMessage {
         'content': content,
         'created_at': createdAt.toUtc().toIso8601String(),
         if (replyToPreview != null) 'reply_to_preview': replyToPreview,
+        if (actionCard != null) 'action_card': actionCard,
       };
 }

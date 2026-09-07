@@ -8,7 +8,10 @@ plugins {
 
 android {
     namespace = "com.nodexdata.speechtotext"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned above flutter.compileSdkVersion's default (34): file_picker's
+    // transitive flutter_plugin_android_lifecycle dependency requires
+    // compiling against API 36+.
+    compileSdk = 36
     // Pinned above flutter.ndkVersion default: several plugins (livekit_client,
     // flutter_webrtc, firebase_*, etc.) require 28.2.13676358; NDK is backward
     // compatible so this satisfies all of them.
@@ -31,7 +34,8 @@ android {
         // see CallConnectionService.kt) requires API 26+. Negligible impact
         // in practice (Android 8.0, released 2017).
         minSdk = 26
-        targetSdk = flutter.targetSdkVersion
+        // Kept in step with compileSdk above (Android requires targetSdk <= compileSdk).
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
