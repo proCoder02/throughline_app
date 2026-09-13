@@ -9,6 +9,7 @@ import '../../models/task.dart';
 import '../../services/task_service.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
+import '../../widgets/animated_task_checkbox.dart';
 import '../../widgets/category_menu.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
@@ -16,7 +17,12 @@ import '../../widgets/offline_banner.dart';
 import '../chats/chat_thread_screen.dart';
 
 class TasksScreen extends StatefulWidget {
-  const TasksScreen({super.key});
+  /// Opens HomeShell's side drawer (the retired bottom nav's replacement) --
+  /// null when this screen is reached some other way than the shell (there
+  /// isn't one today, but this keeps the screen usable standalone).
+  final VoidCallback? onOpenDrawer;
+
+  const TasksScreen({super.key, this.onOpenDrawer});
 
   @override
   State<TasksScreen> createState() => _TasksScreenState();
@@ -116,6 +122,13 @@ class _TasksScreenState extends State<TasksScreen> {
     } else {
       await _service.complete(task.id);
     }
+    // _TaskRow already shows the change immediately (its own optimistic
+    // local state) and is mid-animation right now -- reloading is what
+    // actually re-fetches the list (usually filtered to "open"), which
+    // would otherwise remove/reorder this row out from under that
+    // animation well before it's had time to finish playing.
+    await Future.delayed(const Duration(milliseconds: 420));
+    if (!mounted) return;
     _reload();
     // A little celebration exactly when this was the one that cleared the
     // open list -- not shown on every completion, just the moment it
@@ -211,8 +224,26 @@ class _TasksScreenState extends State<TasksScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
-    return Scaffold(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
+        titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+        leading: widget.onOpenDrawer != null
+            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            : null,
         title: const Text('Tasks'),
         actions: [
           PopupMenuButton<String>(
@@ -237,6 +268,7 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -259,9 +291,9 @@ class _TasksScreenState extends State<TasksScreen> {
               title: 'No ${_statusLabels[_status]!.toLowerCase()} tasks',
             );
     }
-    return ListView.separated(
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: items.length,
-      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 56),
       itemBuilder: (context, i) {
         final task = items[i];
         return FadeSlideIn(
@@ -294,7 +326,17 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 }
 
-class _TaskRow extends StatelessWidget {
+/// Stateful now, not stateless -- purely so the checkbox can flip (and
+/// start its draw-in animation) the instant this row is tapped. Previously
+/// it just reflected `task.isDone` directly, which doesn't actually change
+/// until the parent's own _toggle() finishes its API call *and* reloads the
+/// list -- by which point (this list is usually filtered to "open") a
+/// completed task's row had already been removed/reordered out from under
+/// the animation, so it never had a chance to visibly play. This local
+/// optimistic flag shows the change immediately; onToggle still does the
+/// real completion, now with a matching delay before reload (see
+/// _TasksScreenState._toggle) so this row survives long enough to animate.
+class _TaskRow extends StatefulWidget {
   final Task task;
   final VoidCallback onToggle;
   final VoidCallback onEdit;
@@ -302,70 +344,91 @@ class _TaskRow extends StatelessWidget {
   const _TaskRow({required this.task, required this.onToggle, required this.onEdit});
 
   @override
+  State<_TaskRow> createState() => _TaskRowState();
+}
+
+class _TaskRowState extends State<_TaskRow> {
+  bool? _optimisticDone;
+
+  bool get _done => _optimisticDone ?? widget.task.isDone;
+
+  void _handleTap() {
+    setState(() => _optimisticDone = !_done);
+    widget.onToggle();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final task = widget.task;
     final details = [
       if (task.owner != null) 'Owner: ${task.owner}',
       if (task.dueDate != null) 'Due: ${task.dueDate}',
     ].join('  ·  ');
 
-    return Material(
-      color: AppColors.panel,
-      child: InkWell(
-        onTap: onToggle,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Icon(
-                  task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: task.isDone ? AppColors.accent : AppColors.textSoft,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      task.description,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: task.isDone ? AppColors.textSoft : AppColors.text,
-                        decoration: task.isDone ? TextDecoration.lineThrough : null,
-                      ),
-                    ),
-                    if (details.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(details, style: TextStyle(fontSize: 13.5, color: AppColors.textSoft)),
-                    ],
-                  ],
-                ),
-              ),
-              if (task.emailSent)
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _handleTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 4, top: 2),
-                  child: Icon(Icons.mail_outline, size: 18, color: AppColors.textSoft),
+                  padding: const EdgeInsets.only(top: 2),
+                  child: AnimatedTaskCheckbox(checked: _done),
                 ),
-              IconButton(
-                icon: Icon(Icons.edit_outlined, size: 20, color: AppColors.textSoft),
-                tooltip: 'Edit',
-                onPressed: onEdit,
-              ),
-              if (task.conversationId != null)
-                IconButton(
-                  icon: Icon(Icons.chat_bubble_outline, size: 20, color: AppColors.textSoft),
-                  tooltip: 'View source conversation',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: task.conversationId!)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        task.description,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: _done ? AppColors.dmTextSoft : AppColors.dmText,
+                          decoration: _done ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      if (details.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(details, style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft)),
+                      ],
+                    ],
                   ),
                 ),
-            ],
+                if (task.emailSent)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 2),
+                    child: Icon(Icons.mail_outline, size: 18, color: AppColors.dmTextSoft),
+                  ),
+                IconButton(
+                  icon: Icon(Icons.edit_outlined, size: 20, color: AppColors.dmTextSoft),
+                  tooltip: 'Edit',
+                  onPressed: widget.onEdit,
+                ),
+                if (task.conversationId != null)
+                  IconButton(
+                    icon: Icon(Icons.chat_bubble_outline, size: 20, color: AppColors.dmTextSoft),
+                    tooltip: 'View source conversation',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: task.conversationId!)),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

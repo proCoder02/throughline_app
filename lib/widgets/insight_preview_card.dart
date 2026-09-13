@@ -53,16 +53,16 @@ class _InsightPreviewCardState extends State<InsightPreviewCard> {
         margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.panel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          color: AppColors.dmBubbleIn,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.dmBubbleBorder),
         ),
         child: Row(
           children: [
             Container(
               width: 34,
               height: 34,
-              decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(11)),
+              decoration: BoxDecoration(color: AppColors.dmAccent, borderRadius: BorderRadius.circular(11)),
               child: const Icon(Icons.auto_awesome, color: Colors.white, size: 17),
             ),
             const SizedBox(width: 12),
@@ -70,19 +70,19 @@ class _InsightPreviewCardState extends State<InsightPreviewCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Weekly insight', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  Text('Weekly insight', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.dmText)),
                   const SizedBox(height: 2),
                   Text(
                     digest.cards.first.headline,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12.5, color: AppColors.textSoft),
+                    style: TextStyle(fontSize: 12.5, color: AppColors.dmTextSoft),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.chevron_right, color: AppColors.railIcon, size: 20),
+            Icon(Icons.chevron_right, color: AppColors.dmTextSoft, size: 20),
           ],
         ),
       ),

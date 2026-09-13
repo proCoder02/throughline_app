@@ -70,8 +70,8 @@ class IslandNavBar extends StatelessWidget {
             height: barHeight,
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.panel
-                  .withValues(alpha: isAppDarkMode ? 0.22 : 0.3),
+              color: AppColors.dmBubbleIn
+                  .withValues(alpha: isAppDarkMode ? 0.55 : 0.5),
               borderRadius: BorderRadius.circular(28),
               border: Border.all(
                   color: Colors.white
@@ -101,7 +101,7 @@ class IslandNavBar extends StatelessWidget {
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color:
-                              AppColors.railIconActive.withValues(alpha: 0.14),
+                              AppColors.dmAccent.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
@@ -142,7 +142,7 @@ class _IslandNavItemWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.railIconActive : AppColors.railIcon;
+    final color = selected ? AppColors.dmAccent : AppColors.railIcon;
     final icon = Icon(selected ? (item.activeIcon ?? item.icon) : item.icon,
         color: color, size: 22);
 

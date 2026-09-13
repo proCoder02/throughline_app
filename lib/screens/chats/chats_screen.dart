@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +11,9 @@ import 'package:provider/provider.dart';
 import '../../main.dart' show notifyProvider;
 import '../../models/conversation.dart';
 import '../../models/search_result.dart';
+import '../../motion/motion_profile.dart';
 import '../../services/conversation_service.dart';
+import '../../services/home_signals_service.dart';
 import '../../state/listen_provider.dart';
 import '../../state/notify_provider.dart';
 import '../../state/theme_provider.dart';
@@ -32,7 +35,10 @@ import 'chat_thread_screen.dart';
 import 'global_chat_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
-  const ChatsScreen({super.key});
+  /// Opens HomeShell's side drawer (the retired bottom nav's replacement).
+  final VoidCallback? onOpenDrawer;
+
+  const ChatsScreen({super.key, this.onOpenDrawer});
 
   @override
   State<ChatsScreen> createState() => _ChatsScreenState();
@@ -64,6 +70,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
   Timer? _searchDebounce;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
+  // Adaptive home-screen motion (see ADAPTIVE_HOME_ANIMATION_PLAN.md) --
+  // starts at the always-safe default and only ever improves once the
+  // signal fetch resolves; a slow/failed fetch just means this list's
+  // entrance keeps looking exactly like it always has.
+  final _signalsService = HomeSignalsService();
+  MotionProfile _motionProfile = MotionProfile.balanced;
+
   @override
   void initState() {
     super.initState();
@@ -76,10 +89,24 @@ class _ChatsScreenState extends State<ChatsScreen> {
       _loading = false;
     }
     _reload();
+    _loadMotionProfile();
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final hasConnection = results.any((r) => r != ConnectivityResult.none);
       if (mounted) setState(() => _offline = !hasConnection);
     });
+  }
+
+  Future<void> _loadMotionProfile() async {
+    try {
+      final signals = await _signalsService.fetch();
+      if (!mounted) return;
+      setState(() {
+        _motionProfile = profileFor(time: currentTimeBucket(), mood: signals.mood, chatTone: signals.chatTone);
+      });
+    } catch (_) {
+      // Signals are optional and additive -- this screen's motion just
+      // stays at the default MotionProfile.balanced on any failure.
+    }
   }
 
   @override
@@ -234,8 +261,28 @@ class _ChatsScreenState extends State<ChatsScreen> {
     // See home_shell.dart's identical line for why this is needed --
     // without it this screen doesn't reliably repaint on a theme change.
     context.watch<ThemeProvider>();
-    return Scaffold(
+    return Container(
+      // Same warm-gradient wallpaper as the 1:1 chat screen -- see
+      // AppColors.dmGradient's doc comment.
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
+        titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+        leading: widget.onOpenDrawer != null
+            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            : null,
         title: const Text('Chats'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(100),
@@ -243,15 +290,32 @@ class _ChatsScreenState extends State<ChatsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: TextField(
-                  decoration: const InputDecoration(
-                    hintText: 'Search',
-                    prefixIcon: Icon(Icons.search),
-                    isDense: true,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(20))),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: TextField(
+                      style: TextStyle(color: AppColors.dmText),
+                      decoration: InputDecoration(
+                        hintText: 'Search',
+                        hintStyle: TextStyle(color: AppColors.dmTextSoft),
+                        prefixIcon: Icon(Icons.search, color: AppColors.dmTextSoft),
+                        isDense: true,
+                        filled: true,
+                        fillColor: AppColors.dmPillFill,
+                        border: OutlineInputBorder(
+                            borderRadius: const BorderRadius.all(Radius.circular(20)),
+                            borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: const BorderRadius.all(Radius.circular(20)),
+                            borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: const BorderRadius.all(Radius.circular(20)),
+                            borderSide: const BorderSide(color: AppColors.dmAccent, width: 2)),
+                      ),
+                      onChanged: _onSearchChanged,
+                    ),
                   ),
-                  onChanged: _onSearchChanged,
                 ),
               ),
               CategoryChipBar(
@@ -279,11 +343,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 // Slightly translucent fill (icon/label stay fully opaque) so
                 // a conversation row scrolled underneath is still visible
                 // through/around the button instead of fully hidden behind it.
-                backgroundColor: AppColors.accent.withValues(alpha: 0.85),
+                backgroundColor: AppColors.dmAccent.withValues(alpha: 0.85),
                 tooltip: 'Ask about your people & conversations',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
-                ),
+                // Refetch signals on return: ChatsScreen's State persists
+                // underneath this push (Navigator doesn't rebuild it), so
+                // without this a chat_tone set by GlobalChatScreen.dispose()
+                // just now would otherwise only ever show up after a full
+                // app restart.
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const GlobalChatScreen()),
+                  );
+                  _loadMotionProfile();
+                },
                 icon: const Icon(Icons.chat_bubble_outline),
                 label: const Text('Chat'),
               ),
@@ -304,43 +376,56 @@ class _ChatsScreenState extends State<ChatsScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Material(
-                    color: AppColors.panel,
+                  ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                    elevation: 2,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      // Same conversation, same transition as tapping it from
-                      // the list -- the timer is just another way to jump
-                      // straight into the live thread it's counting for.
-                      onTap: listen.conversationId == null
-                          ? null
-                          : () {
-                              notifyProvider
-                                  .clearConversation(listen.conversationId!);
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                    builder: (_) => ChatThreadScreen(
-                                        conversationId:
-                                            listen.conversationId!)),
-                              );
-                            },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const BlinkingDot(color: AppColors.danger),
-                            const SizedBox(width: 8),
-                            LiveTimerText(
-                              startedAt: listen.startedAt!,
-                              style: const TextStyle(
-                                  color: AppColors.danger,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.dmPillFill,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppColors.dmBubbleBorder),
+                        ),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          borderRadius: BorderRadius.circular(20),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            // Same conversation, same transition as tapping it
+                            // from the list -- the timer is just another way
+                            // to jump straight into the live thread it's
+                            // counting for.
+                            onTap: listen.conversationId == null
+                                ? null
+                                : () {
+                                    notifyProvider
+                                        .clearConversation(listen.conversationId!);
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (_) => ChatThreadScreen(
+                                              conversationId:
+                                                  listen.conversationId!)),
+                                    );
+                                  },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const BlinkingDot(color: AppColors.danger),
+                                  const SizedBox(width: 8),
+                                  LiveTimerText(
+                                    startedAt: listen.startedAt!,
+                                    style: const TextStyle(
+                                        color: AppColors.danger,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -366,7 +451,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               TapBounce(
                 child: FloatingActionButton.extended(
                   heroTag: 'listen',
-                  backgroundColor: AppColors.accent.withValues(alpha: 0.85),
+                  backgroundColor: AppColors.dmAccent.withValues(alpha: 0.85),
                   onPressed: () => _toggleListen(listen),
                   icon: const Icon(Icons.mic),
                   label: const Text('Listen'),
@@ -388,6 +473,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -406,10 +492,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
         return const EmptyState(
             icon: Icons.search_off, title: 'No matches found');
       }
-      return ListView.separated(
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         itemCount: results.length,
-        separatorBuilder: (_, __) =>
-            Divider(height: 1, color: AppColors.border, indent: 78),
         itemBuilder: (context, i) {
           final r = results[i];
           return _SearchResultRow(
@@ -442,16 +527,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   'Start a live listen session or make a call to get started.',
             );
     }
-    return ListView.separated(
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: items.length,
-      separatorBuilder: (_, __) =>
-          Divider(height: 1, color: AppColors.border, indent: 78),
       itemBuilder: (context, i) {
         final c = items[i];
         final unread = notify.unreadConversations.contains(c.id);
         return FadeSlideIn(
           key: ValueKey('fade_${c.id}'),
           index: i,
+          profile: _motionProfile,
           child: Slidable(
             key: ValueKey(c.id),
             endActionPane: ActionPane(
@@ -501,76 +586,84 @@ class _ChatRow extends StatelessWidget {
     final categoryLabel = category.isEmpty
         ? ''
         : category[0].toUpperCase() + category.substring(1);
-    return Material(
-      color: AppColors.panel,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InitialAvatar(name: conversation.displayTitle),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            conversation.displayTitle,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight:
-                                  unread ? FontWeight.w700 : FontWeight.w600,
-                              color: AppColors.text,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InitialAvatar(name: conversation.displayTitle),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              conversation.displayTitle,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight:
+                                    unread ? FontWeight.w700 : FontWeight.w600,
+                                color: AppColors.dmText,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          DateFormat('MMM d, HH:mm')
-                              .format(conversation.createdAt),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color:
-                                unread ? AppColors.accent : AppColors.textSoft,
-                            fontWeight:
-                                unread ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            categoryLabel,
+                          const SizedBox(width: 8),
+                          Text(
+                            DateFormat('MMM d, HH:mm')
+                                .format(conversation.createdAt),
                             style: TextStyle(
-                                fontSize: 13.5, color: AppColors.textSoft),
-                            overflow: TextOverflow.ellipsis,
+                              fontSize: 12,
+                              color: unread ? AppColors.dmAccent : AppColors.dmTextSoft,
+                              fontWeight:
+                                  unread ? FontWeight.w600 : FontWeight.normal,
+                            ),
                           ),
-                        ),
-                        if (unread)
-                          Container(
-                            width: 9,
-                            height: 9,
-                            margin: const EdgeInsets.only(left: 8),
-                            decoration: const BoxDecoration(
-                                color: AppColors.unreadBadge,
-                                shape: BoxShape.circle),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              categoryLabel,
+                              style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                      ],
-                    ),
-                  ],
+                          if (unread)
+                            Container(
+                              width: 9,
+                              height: 9,
+                              margin: const EdgeInsets.only(left: 8),
+                              decoration: const BoxDecoration(
+                                  color: AppColors.unreadBadge,
+                                  shape: BoxShape.circle),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -588,56 +681,66 @@ class _SearchResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.panel,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InitialAvatar(name: result.displayTitle),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            result.displayTitle,
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.text),
-                            overflow: TextOverflow.ellipsis,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InitialAvatar(name: result.displayTitle),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              result.displayTitle,
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.dmText),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          DateFormat('MMM d, HH:mm').format(result.createdAt),
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.textSoft),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text.rich(
-                      TextSpan(
-                        style: TextStyle(
-                            fontSize: 13.5, color: AppColors.textSoft),
-                        children: _parseSnippetSpans(result.snippet),
+                          const SizedBox(width: 8),
+                          Text(
+                            DateFormat('MMM d, HH:mm').format(result.createdAt),
+                            style: TextStyle(
+                                fontSize: 12, color: AppColors.dmTextSoft),
+                          ),
+                        ],
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                      const SizedBox(height: 3),
+                      Text.rich(
+                        TextSpan(
+                          style: TextStyle(
+                              fontSize: 13.5, color: AppColors.dmTextSoft),
+                          children: _parseSnippetSpans(result.snippet),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -658,7 +761,7 @@ List<TextSpan> _parseSnippetSpans(String snippet) {
       spans.add(TextSpan(text: snippet.substring(last, match.start)));
     spans.add(TextSpan(
         text: match.group(1),
-        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.text)));
+        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.dmText)));
     last = match.end;
   }
   if (last < snippet.length) spans.add(TextSpan(text: snippet.substring(last)));

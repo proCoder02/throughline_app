@@ -18,7 +18,7 @@ const _moodColors = {
   'sad': Color(0xFF636E72),
 };
 
-Color _colorForMood(String label) => _moodColors[label.toLowerCase()] ?? AppColors.accent;
+Color _colorForMood(String label) => _moodColors[label.toLowerCase()] ?? AppColors.dmAccent;
 
 /// GitHub-contribution-graph-style calendar heatmap of the last 28 days'
 /// dominant mood, plus a simple check-in streak -- the highest-leverage
@@ -70,23 +70,23 @@ class _MoodTrendCardState extends State<MoodTrendCard> {
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text('Mood trend', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+              Text('Mood trend', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.dmText)),
               const Spacer(),
               if (history.streak > 1)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: AppColors.dmAccent.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
                   child: Text('🔥 ${history.streak}-day streak',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentDark)),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.dmAccentDark)),
                 ),
             ],
           ),
@@ -110,7 +110,7 @@ class _DayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = day != null ? _colorForMood(day!.moodLabel) : AppColors.bgApp;
+    final color = day != null ? _colorForMood(day!.moodLabel) : AppColors.dmPillFill;
     return Tooltip(
       message: day != null
           ? '${day!.date.month}/${day!.date.day}: ${day!.moodLabel} ${day!.emoji}'
@@ -121,7 +121,7 @@ class _DayCell extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(4),
-          border: day == null ? Border.all(color: AppColors.border) : null,
+          border: day == null ? Border.all(color: AppColors.dmBubbleBorder) : null,
         ),
       ),
     );

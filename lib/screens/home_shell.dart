@@ -4,16 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../main.dart' show notifyProvider, callProvider, navigatorKey;
+import '../models/conversation.dart';
 import '../models/friend.dart';
 import '../services/api_client.dart';
+import '../services/conversation_service.dart';
 import '../services/friend_service.dart';
 import '../services/push_service.dart';
 import '../state/notify_provider.dart';
 import '../state/theme_provider.dart';
+import '../theme.dart';
 import '../widgets/call_overlay.dart';
 import '../widgets/island_nav_bar.dart';
 import 'chats/chat_thread_screen.dart';
 import 'chats/chats_screen.dart';
+import 'home/home_screen.dart';
 import 'insights/digest_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'profiles/profiles_screen.dart';
@@ -32,6 +36,18 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
 
+  // Bottom-nav is retired in favor of the side drawer below (Chats/Tasks/
+  // Profiles/Friends/Settings, opened from Home's top-left menu icon) --
+  // flip this back to true to restore it instantly. IslandNavBar itself
+  // (widgets/island_nav_bar.dart) is untouched/still fully wired below,
+  // just not rendered while this is false -- nothing was deleted.
+  static const bool _showBottomNav = false;
+
+  // Needed to open the drawer from Home's own top bar: Home renders its own
+  // nested Scaffold (for its floating ask-bar), which shadows a plain
+  // Scaffold.of(context) lookup from finding this outer one.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
   // Only the active tab's screen is actually built/initState'd -- an eager
   // IndexedStack would fire all 5 screens' initState (and their network/cache
   // calls) simultaneously the moment this widget mounts, right in the middle
@@ -40,19 +56,35 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   // never-visited tabs stay an empty placeholder.
   final _visited = <int>{0};
 
-  static const _builders = <WidgetBuilder>[
-    _buildChats,
-    _buildTasks,
-    _buildProfiles,
-    _buildFriends,
-    _buildSettings,
-  ];
+  // Home is index 0 (new -- see home/home_screen.dart), shifting every
+  // existing tab up by one. Not `static const` like before: Home's Quick
+  // Actions need to switch tabs (e.g. tapping "Tasks"), which only this
+  // State's own _switchTab can do -- a plain static builder has no way to
+  // close over it.
+  VoidCallback get _openDrawer => () => _scaffoldKey.currentState?.openDrawer();
 
-  static Widget _buildChats(BuildContext _) => const ChatsScreen();
-  static Widget _buildTasks(BuildContext _) => const TasksScreen();
-  static Widget _buildProfiles(BuildContext _) => const ProfilesScreen();
-  static Widget _buildFriends(BuildContext _) => const FriendsScreen();
-  static Widget _buildSettings(BuildContext _) => const SettingsScreen();
+  // Every tab's own app bar gets the same menu button now (see each
+  // screen's onOpenDrawer) -- with the bottom nav gone, that's the only way
+  // back to any other section (Home included) once you've navigated away.
+  List<WidgetBuilder> get _builders => [
+        (_) => HomeScreen(onNavigateToTab: _switchTab, onOpenDrawer: _openDrawer),
+        (_) => ChatsScreen(onOpenDrawer: _openDrawer),
+        (_) => TasksScreen(onOpenDrawer: _openDrawer),
+        (_) => ProfilesScreen(onOpenDrawer: _openDrawer),
+        (_) => FriendsScreen(onOpenDrawer: _openDrawer),
+        (_) => SettingsScreen(onOpenDrawer: _openDrawer),
+      ];
+
+  void _switchTab(int i) {
+    setState(() {
+      _index = i;
+      _visited.add(i);
+      // TasksScreen (now index 2) only ever runs its own initState() (which
+      // clears this) the first time the tab is visited -- see the comment
+      // on _visited below.
+      if (i == 2) notifyProvider.clearTaskBadge();
+    });
+  }
 
   @override
   void initState() {
@@ -305,6 +337,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return Stack(
       children: [
         Scaffold(
+          key: _scaffoldKey,
           // Needed now that IslandNavBar is genuinely translucent (real
           // BackdropFilter transparency) -- without this, tab content stops
           // short of the nav bar's reserved slot, so there'd be nothing
@@ -312,7 +345,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           // background color. Screens with their own FloatingActionButton
           // (ChatsScreen) compensate by padding themselves clear of
           // IslandNavBar.barHeight so their FAB doesn't end up hidden
-          // behind it.
+          // behind it. Left on even with the bottom nav retired -- Home's
+          // own floating ask-bar relies on the exact same clearance.
           extendBody: true,
           body: IndexedStack(
             index: _index,
@@ -323,49 +357,184 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                     : const SizedBox.shrink(),
             ],
           ),
-          bottomNavigationBar: IslandNavBar(
-            currentIndex: _index,
-            onTap: (i) => setState(() {
-              _index = i;
-              _visited.add(i);
-              // TasksScreen only ever runs its own initState() (which
-              // clears this) the first time the tab is visited -- the
-              // IndexedStack above deliberately keeps it alive afterward
-              // (see the comment on _visited), so a badge from a task
-              // created after that first visit never cleared on later
-              // visits without this.
-              if (i == 1) notifyProvider.clearTaskBadge();
-            }),
-            items: [
-              IslandNavItem(
-                icon: Icons.chat_bubble_outline,
-                activeIcon: Icons.chat_bubble,
-                label: 'Chats',
-                badgeCount: notify.unreadConversations.length,
-              ),
-              IslandNavItem(
-                icon: Icons.check_circle_outline,
-                activeIcon: Icons.check_circle,
-                label: 'Tasks',
-                badgeCount: notify.taskBadge,
-              ),
-              const IslandNavItem(
-                  icon: Icons.people_outline,
-                  activeIcon: Icons.people,
-                  label: 'Profiles'),
-              const IslandNavItem(
-                  icon: Icons.group_outlined,
-                  activeIcon: Icons.group,
-                  label: 'Friends'),
-              const IslandNavItem(
-                  icon: Icons.settings_outlined,
-                  activeIcon: Icons.settings,
-                  label: 'Settings'),
-            ],
-          ),
+          // Chats/Tasks/Profiles/Friends/Settings live in the side drawer
+          // now (see _AppDrawer below) -- attached to this same outer
+          // Scaffold, so it also opens via the standard left-edge swipe
+          // from any tab, not just from Home's menu icon.
+          drawer: _AppDrawer(currentIndex: _index, onSelect: _switchTab, notify: notify),
+          bottomNavigationBar: _showBottomNav
+              ? IslandNavBar(
+                  currentIndex: _index,
+                  onTap: _switchTab,
+                  items: [
+                    const IslandNavItem(
+                        icon: Icons.home_outlined,
+                        activeIcon: Icons.home,
+                        label: 'Home'),
+                    IslandNavItem(
+                      icon: Icons.chat_bubble_outline,
+                      activeIcon: Icons.chat_bubble,
+                      label: 'Chats',
+                      badgeCount: notify.unreadConversations.length,
+                    ),
+                    IslandNavItem(
+                      icon: Icons.check_circle_outline,
+                      activeIcon: Icons.check_circle,
+                      label: 'Tasks',
+                      badgeCount: notify.taskBadge,
+                    ),
+                    const IslandNavItem(
+                        icon: Icons.people_outline,
+                        activeIcon: Icons.people,
+                        label: 'Profiles'),
+                    const IslandNavItem(
+                        icon: Icons.group_outlined,
+                        activeIcon: Icons.group,
+                        label: 'Friends'),
+                    const IslandNavItem(
+                        icon: Icons.settings_outlined,
+                        activeIcon: Icons.settings,
+                        label: 'Settings'),
+                  ],
+                )
+              : null,
         ),
         const CallOverlay(),
       ],
+    );
+  }
+}
+
+/// Side-drawer equivalent of the retired bottom nav -- same destinations and
+/// badge counts, same _switchTab wiring underneath, plus Home itself (every
+/// other screen's own app bar opens this same drawer, so Home needs to be
+/// reachable from here too, not just by launching the app fresh). Restyled
+/// to the same warm-gradient palette every main-tab screen uses (it was
+/// plain Material defaults before), with no "Throughline" title (removed
+/// per request -- the nav items speak for themselves), and a real Recent
+/// Conversations section below Settings, ChatGPT-sidebar style.
+class _AppDrawer extends StatefulWidget {
+  final int currentIndex;
+  final ValueChanged<int> onSelect;
+  final NotifyProvider notify;
+
+  const _AppDrawer({required this.currentIndex, required this.onSelect, required this.notify});
+
+  @override
+  State<_AppDrawer> createState() => _AppDrawerState();
+}
+
+class _AppDrawerState extends State<_AppDrawer> {
+  final _conversationService = ConversationService();
+  List<Conversation>? _recentConversations;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final conversations = await _conversationService.list();
+      if (mounted) setState(() => _recentConversations = conversations.take(12).toList());
+    } catch (_) {
+      // Best-effort, same fail-silent-to-nothing convention as MoodTrendCard
+      // -- a slow/offline fetch just means this section doesn't show yet.
+      if (mounted) setState(() => _recentConversations = []);
+    }
+  }
+
+  void _select(int index) {
+    Navigator.of(context).pop();
+    widget.onSelect(index);
+  }
+
+  void _openConversation(Conversation conversation) {
+    Navigator.of(context).pop();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: conversation.id)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (0, Icons.home_outlined, 'Home', 0),
+      (1, Icons.chat_bubble_outline, 'Chats', widget.notify.unreadConversations.length),
+      (2, Icons.check_circle_outline, 'Tasks', widget.notify.taskBadge),
+      (3, Icons.people_outline, 'Profiles', 0),
+      (4, Icons.group_outlined, 'Friends', 0),
+      (5, Icons.settings_outlined, 'Settings', 0),
+    ];
+    return Drawer(
+      backgroundColor: AppColors.dmGradient.first,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: AppColors.dmGradient,
+          ),
+        ),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              const SizedBox(height: 8),
+              for (final (index, icon, label, badge) in items)
+                ListTile(
+                  leading: Icon(icon, color: index == widget.currentIndex ? AppColors.dmAccent : AppColors.dmTextSoft),
+                  title: Text(label,
+                      style: TextStyle(
+                        color: index == widget.currentIndex ? AppColors.dmAccent : AppColors.dmText,
+                        fontWeight: index == widget.currentIndex ? FontWeight.w700 : FontWeight.w500,
+                      )),
+                  selected: index == widget.currentIndex,
+                  selectedTileColor: AppColors.dmPillFill,
+                  trailing: badge > 0
+                      ? Badge(label: Text('$badge'), backgroundColor: AppColors.dmAccent)
+                      : null,
+                  onTap: () => _select(index),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.history, size: 16, color: AppColors.dmTextSoft),
+                    const SizedBox(width: 8),
+                    Text('Recent Conversations',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.dmTextSoft)),
+                  ],
+                ),
+              ),
+              if (_recentConversations == null)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+                )
+              else if (_recentConversations!.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text('Nothing recorded yet.', style: TextStyle(fontSize: 12.5, color: AppColors.dmTextSoft)),
+                )
+              else
+                for (final conversation in _recentConversations!)
+                  ListTile(
+                    dense: true,
+                    leading: Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.dmTextSoft),
+                    title: Text(
+                      conversation.displayTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13.5, color: AppColors.dmText),
+                    ),
+                    onTap: () => _openConversation(conversation),
+                  ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

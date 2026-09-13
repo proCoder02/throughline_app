@@ -87,54 +87,76 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_profile.name),
-        actions: [
-          IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Rename', onPressed: _rename),
-          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: _delete),
-        ],
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
       ),
-      body: _profile.notes.isEmpty
-          ? Center(child: Text('No observations yet', style: TextStyle(color: AppColors.textSoft)))
-          : ListView.separated(
-              itemCount: _profile.notes.length,
-              separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
-              itemBuilder: (context, i) {
-                final n = _profile.notes[i];
-                final category = n.category.isEmpty ? '' : n.category[0].toUpperCase() + n.category.substring(1);
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: RichText(
-                          text: TextSpan(
-                            style: TextStyle(fontSize: 14.5, color: AppColors.text, height: 1.4),
-                            children: [
-                              TextSpan(
-                                text: '$category  ·  ${DateFormat('MMM d, HH:mm').format(n.createdAt)}\n',
-                                style: TextStyle(color: AppColors.textSoft, fontSize: 12.5),
-                              ),
-                              TextSpan(text: n.observation),
-                            ],
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: AppColors.dmText),
+          titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+          title: Text(_profile.name),
+          actions: [
+            IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Rename', onPressed: _rename),
+            IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: _delete),
+          ],
+        ),
+        body: _profile.notes.isEmpty
+            ? Center(child: Text('No observations yet', style: TextStyle(color: AppColors.dmTextSoft)))
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                itemCount: _profile.notes.length,
+                itemBuilder: (context, i) {
+                  final n = _profile.notes[i];
+                  final category = n.category.isEmpty ? '' : n.category[0].toUpperCase() + n.category.substring(1);
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.dmBubbleIn,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.dmBubbleBorder),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(
+                              style: TextStyle(fontSize: 14.5, color: AppColors.dmText, height: 1.4),
+                              children: [
+                                TextSpan(
+                                  text: '$category  ·  ${DateFormat('MMM d, HH:mm').format(n.createdAt)}\n',
+                                  style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5),
+                                ),
+                                TextSpan(text: n.observation),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      if (n.conversationId != null)
-                        IconButton(
-                          icon: Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.textSoft),
-                          tooltip: 'View source conversation',
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: n.conversationId!)),
+                        if (n.conversationId != null)
+                          IconButton(
+                            icon: Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.dmTextSoft),
+                            tooltip: 'View source conversation',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => ChatThreadScreen(conversationId: n.conversationId!)),
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

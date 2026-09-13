@@ -20,9 +20,14 @@ import '../../widgets/island_nav_bar.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/photo_viewer.dart';
 import '../../widgets/toggle_group.dart';
+import 'home_preview_screen.dart';
+import 'your_world_preview_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  /// Opens HomeShell's side drawer (the retired bottom nav's replacement).
+  final VoidCallback? onOpenDrawer;
+
+  const SettingsScreen({super.key, this.onOpenDrawer});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -284,9 +289,28 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final auth = context.watch<AuthProvider>();
     context.watch<ThemeProvider>();
     final categoryNames = _categories?.all ?? kCategories;
-    return Scaffold(
-      backgroundColor: AppColors.bgApp,
-      appBar: AppBar(title: const Text('Settings')),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
+        titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+        leading: widget.onOpenDrawer != null
+            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            : null,
+        title: const Text('Settings'),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _loadError != null
@@ -329,8 +353,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                                 child: Container(
                                   width: 18, height: 18,
                                   decoration: BoxDecoration(
-                                    color: AppColors.accent, shape: BoxShape.circle,
-                                    border: Border.all(color: AppColors.panel, width: 2),
+                                    color: AppColors.dmAccent, shape: BoxShape.circle,
+                                    border: Border.all(color: AppColors.dmBubbleIn, width: 2),
                                   ),
                                   child: _uploadingPicture
                                       ? const Padding(
@@ -347,8 +371,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(auth.username ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                              Text('Signed in', style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
+                              Text(auth.username ?? '', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.dmText)),
+                              Text('Signed in', style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft)),
                             ],
                           ),
                         ),
@@ -466,7 +490,12 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           ),
                         ),
                         const SizedBox(width: 8),
-                        ElevatedButton(onPressed: _addCategory, child: const Text('Add')),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.dmAccent, foregroundColor: Colors.white),
+                          onPressed: _addCategory,
+                          child: const Text('Add'),
+                        ),
                       ],
                     ),
                     if (_categoryError != null)
@@ -490,10 +519,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                             Expanded(
                               child: Text(
                                 _friendCode ?? '',
-                                style: const TextStyle(fontFamily: 'monospace', fontSize: 20, fontWeight: FontWeight.w600),
+                                style: TextStyle(fontFamily: 'monospace', fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.dmText),
                               ),
                             ),
-                            Icon(Icons.copy_outlined, size: 20, color: AppColors.textSoft),
+                            Icon(Icons.copy_outlined, size: 20, color: AppColors.dmTextSoft),
                           ],
                         ),
                       ),
@@ -523,6 +552,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                                 )
                               else
                                 ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.dmAccent, foregroundColor: Colors.white),
                                   onPressed: () => _connectSwiggy(entry.key),
                                   child: const Text('Connect'),
                                 ),
@@ -531,6 +562,47 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                         ),
                     ],
                   ),
+                _SettingsCard(
+                  title: 'Experimental',
+                  subtitle: 'A separate sandbox screen -- not linked into the real home '
+                      'screen, safe to poke at.',
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const HomePreviewScreen()),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.auto_awesome_outlined, size: 20, color: AppColors.dmAccent),
+                            const SizedBox(width: 10),
+                            const Expanded(child: Text('Home screen concept (preview)', style: TextStyle(fontSize: 15))),
+                            Icon(Icons.chevron_right, size: 20, color: AppColors.dmTextSoft),
+                          ],
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const YourWorldPreviewScreen()),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.hub_outlined, size: 20, color: AppColors.dmAccent),
+                            const SizedBox(width: 10),
+                            const Expanded(child: Text('Your World concept (preview)', style: TextStyle(fontSize: 15))),
+                            Icon(Icons.chevron_right, size: 20, color: AppColors.dmTextSoft),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
@@ -547,6 +619,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 const SizedBox(height: 12),
               ],
             ),
+      ),
     );
   }
 }
@@ -562,27 +635,33 @@ class _SettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      // Material ancestor required -- any ListTile/InkWell child (radio
+      // rows, the toggle switches, the "Home screen concept" row) paints
+      // its own background/ink via Ink, which is otherwise invisible (and
+      // throws a debug warning) inside a plain, non-Material Container.
       child: Material(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (title != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(title!, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  child: Text(title!, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.dmText)),
                 ),
               if (subtitle != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(subtitle!, style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
+                  child: Text(subtitle!, style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft)),
                 ),
               ...children,
             ],

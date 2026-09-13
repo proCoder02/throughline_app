@@ -5,14 +5,23 @@ import '../../services/digest_service.dart';
 import '../../theme.dart';
 
 const _categoryColors = {
-  'preference': AppColors.accent,
+  'preference': AppColors.dmAccent,
   'fact': Color(0xFFE8A33D),
   'mood': Color(0xFF6C8EF5),
   'personality': Color(0xFFB072E8),
   'relationship': Color(0xFFEA6A9C),
 };
 
-Color _colorForCategory(String category) => _categoryColors[category] ?? AppColors.accent;
+const _categoryIcons = {
+  'preference': Icons.favorite_outline,
+  'fact': Icons.lightbulb_outline,
+  'mood': Icons.mood_outlined,
+  'personality': Icons.psychology_outlined,
+  'relationship': Icons.people_outline,
+};
+
+Color _colorForCategory(String category) => _categoryColors[category] ?? AppColors.dmAccent;
+IconData _iconForCategory(String category) => _categoryIcons[category] ?? Icons.auto_awesome;
 
 /// Push-triggered full-screen route (from a digest_ready notification tap,
 /// or InsightPreviewCard on the Chats/home tab) -- see home_shell.dart's
@@ -64,9 +73,27 @@ class _DigestScreenState extends State<DigestScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Weekly Insight')),
-      body: SafeArea(child: _buildBody()),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: AppColors.dmText),
+          titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+          title: const Text('Weekly Insight'),
+        ),
+        body: SafeArea(child: _buildBody()),
+      ),
     );
   }
 
@@ -75,7 +102,7 @@ class _DigestScreenState extends State<DigestScreen> {
     if (_error != null) {
       return Center(
         child: Text("Couldn't load your insight -- pull to try again from the Chats tab.",
-            textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSoft)),
+            textAlign: TextAlign.center, style: TextStyle(color: AppColors.dmTextSoft)),
       );
     }
     final digest = _digest;
@@ -86,14 +113,21 @@ class _DigestScreenState extends State<DigestScreen> {
           child: Text(
             "No insight yet -- check back once I've noticed something worth sharing.",
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSoft, fontSize: 15),
+            style: TextStyle(color: AppColors.dmTextSoft, fontSize: 15),
           ),
         ),
       );
     }
 
+    // Recap row of this week's categories, mandala-icon-row style -- a
+    // quick "what kinds of things are in here" glance before diving into
+    // the swipeable cards below, echoing the reference design's circular
+    // category-icon strip.
+    final categories = digest.cards.map((c) => c.category).toSet().toList();
+
     return Column(
       children: [
+        if (categories.isNotEmpty) _CategoryRecapRow(categories: categories),
         _ProgressRow(total: digest.cards.length, current: _index),
         Expanded(
           child: Padding(
@@ -104,6 +138,55 @@ class _DigestScreenState extends State<DigestScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Circular per-category icon recap, mandala-icon-row style -- a quick
+/// visual "what's in this week's insight" glance above the swipeable cards.
+/// Purely a recap (not a filter -- tapping does nothing yet), so a repeat
+/// category collapses to one icon via the caller's toSet() dedup.
+class _CategoryRecapRow extends StatelessWidget {
+  final List<String> categories;
+  const _CategoryRecapRow({required this.categories});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      // 48 (icon circle) + 6 (gap) + ~16 (label line, incl. descenders) = 70
+      // of actual content -- 76 minus this row's own 12px vertical padding
+      // only left 64, a few px short, which is what overflowed. 96 leaves
+      // real headroom (rather than being tuned to the exact pixel), so a
+      // larger system font scale or a longer wrapped label still fits.
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        itemCount: categories.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (context, i) {
+          final category = categories[i];
+          final color = _colorForCategory(category);
+          final label = category.isEmpty ? '' : category[0].toUpperCase() + category.substring(1);
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withValues(alpha: 0.16),
+                  border: Border.all(color: color.withValues(alpha: 0.5), width: 1.5),
+                ),
+                child: Icon(_iconForCategory(category), color: color, size: 22),
+              ),
+              const SizedBox(height: 6),
+              Text(label, style: TextStyle(fontSize: 11, color: AppColors.dmTextSoft), overflow: TextOverflow.ellipsis),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -124,7 +207,7 @@ class _ProgressRow extends StatelessWidget {
               margin: EdgeInsets.only(right: i == total - 1 ? 0 : 5),
               height: 3,
               decoration: BoxDecoration(
-                color: i < current ? AppColors.accent : AppColors.border,
+                color: i < current ? AppColors.dmAccent : AppColors.dmBubbleBorder,
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -358,9 +441,9 @@ class _DraggableCardState extends State<_DraggableCard> with SingleTickerProvide
               children: [
                 _InsightCard(card: widget.card),
                 if (nextOpacity > 0)
-                  Positioned(top: 14, right: 14, child: _SwipeStamp(label: 'NEXT', color: AppColors.accent, opacity: nextOpacity)),
+                  Positioned(top: 14, right: 14, child: _SwipeStamp(label: 'NEXT', color: AppColors.dmAccent, opacity: nextOpacity)),
                 if (backOpacity > 0)
-                  Positioned(top: 14, left: 14, child: _SwipeStamp(label: 'BACK', color: AppColors.textSoft, opacity: backOpacity)),
+                  Positioned(top: 14, left: 14, child: _SwipeStamp(label: 'BACK', color: AppColors.dmTextSoft, opacity: backOpacity)),
               ],
             ),
           ),
@@ -383,7 +466,7 @@ class _SwipeStamp extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: AppColors.panel,
+          color: AppColors.dmBubbleIn,
           border: Border.all(color: color, width: 2),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -405,11 +488,17 @@ class _InsightCard extends StatelessWidget {
       height: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
       decoration: BoxDecoration(
-        color: AppColors.panel,
+        color: AppColors.dmBubbleIn,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 24, offset: const Offset(0, 10))],
+        border: Border.all(color: AppColors.dmBubbleBorder),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isAppDarkMode ? 0.35 : 0.12), blurRadius: 24, offset: const Offset(0, 10))],
       ),
+      // Column, not a fixed layout -- the icon/label/headline stay put at
+      // their natural size, and only the body (the one field with genuinely
+      // unpredictable length) scrolls internally via the Expanded+
+      // SingleChildScrollView below, instead of a long headline+body
+      // combination overflowing the card's fixed height (the bottom-overflow
+      // this replaces).
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -417,16 +506,19 @@ class _InsightCard extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(11)),
-            child: const Icon(Icons.auto_awesome, color: Colors.white, size: 17),
+            child: Icon(_iconForCategory(card.category), color: Colors.white, size: 17),
           ),
           const SizedBox(height: 10),
           Text(card.label.toUpperCase(),
               style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 10.5, letterSpacing: 0.5)),
-          const SizedBox(height: 6),
-          Text(card.headline,
-              style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 17, height: 1.25)),
-          const SizedBox(height: 6),
-          Text(card.body, style: TextStyle(color: AppColors.textSoft, fontSize: 13, height: 1.45)),
+          const SizedBox(height: 8),
+          Text(card.headline, style: appHeadlineFont(color: AppColors.dmText, fontSize: 19)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Text(card.body, style: TextStyle(color: AppColors.dmTextSoft, fontSize: 13, height: 1.45)),
+            ),
+          ),
         ],
       ),
     );
@@ -441,8 +533,9 @@ class _DoneState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+        border: Border.all(color: AppColors.dmBubbleBorder),
       ),
       child: Center(
         child: Padding(
@@ -452,12 +545,15 @@ class _DoneState extends StatelessWidget {
             children: [
               const Text('✓', style: TextStyle(fontSize: 34)),
               const SizedBox(height: 8),
-              Text("That's everything this week.",
-                  style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 15)),
+              Text("That's everything this week.", style: appHeadlineFont(color: AppColors.dmText, fontSize: 15)),
               const SizedBox(height: 4),
-              Text('Check back next week for more.', style: TextStyle(color: AppColors.textSoft, fontSize: 13)),
+              Text('Check back next week for more.', style: TextStyle(color: AppColors.dmTextSoft, fontSize: 13)),
               const SizedBox(height: 12),
-              TextButton(onPressed: onReplay, child: const Text('Replay')),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: AppColors.dmAccent),
+                onPressed: onReplay,
+                child: const Text('Replay'),
+              ),
             ],
           ),
         ),

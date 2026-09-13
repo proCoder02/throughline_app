@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
+  google_fonts: ^6.2.1
   dio: ^5.4.3
   web_socket_channel: ^2.4.0
   flutter_secure_storage: ^9.0.0
@@ -34,6 +35,15 @@ dependencies:
   # android/build.gradle instead of reading flutter.compileSdkVersion, which
   # conflicts with flutter_plugin_android_lifecycle's compileSdk 36 requirement.
   file_picker: ^10.3.3
+  flutter_animate: ^4.5.2
+  # Not used by anything yet -- added so a specific Lottie JSON asset (e.g.
+  # a Gemini-style animation) can be dropped in and wired up later without
+  # a separate dependency-add step. No asset ships with the app today.
+  lottie: ^3.1.2
+  # Dissolves the typing indicator into particles the instant a real reply
+  # lands, instead of it just popping out of the list -- see
+  # widgets/dissolving_typing_indicator.dart.
+  fade_out_particle: ^1.2.1
 
 dev_dependencies:
   flutter_test:
@@ -46,6 +56,11 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  # Mood-companion face PNGs for the home-preview sandbox (Settings ->
+  # Experimental) -- Google Noto Emoji, Apache 2.0, see
+  # assets/mood_faces/NOTICE.
+  assets:
+    - assets/mood_faces/
 
 # Generates the native (pre-Flutter-engine) splash screen -- fixes a plain
 # black frame some OEM Android skins (e.g. ColorOS) show for a moment

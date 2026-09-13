@@ -1,0 +1,18 @@
+These images are derived from Google's Noto Emoji project:
+https://github.com/googlefonts/noto-emoji
+
+Licensed under the Apache License, Version 2.0:
+https://github.com/googlefonts/noto-emoji/blob/main/LICENSE
+http://www.apache.org/licenses/LICENSE-2.0
+
+Files (128px PNG), renamed from their Unicode codepoint to the app's own
+mood/tone label:
+  positive.png     <- emoji_u1f60a.png (smiling face with smiling eyes)
+  neutral.png      <- emoji_u1f642.png (slightly smiling face)
+  low.png          <- emoji_u1f614.png (pensive face)
+  stressed.png     <- emoji_u1f60c.png (relieved face)
+  celebratory.png  <- emoji_u1f973.png (partying face)
+  resolved.png     <- emoji_u2705.png (check mark button)
+  night.png        <- emoji_u1f634.png (sleeping face)
+
+No modifications were made to the images themselves beyond renaming.

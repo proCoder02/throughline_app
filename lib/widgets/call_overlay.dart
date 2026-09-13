@@ -238,7 +238,7 @@ class _CallScreen extends StatelessWidget {
         _CallButton(
           icon: Icons.call,
           label: 'Accept',
-          color: const Color(0xFF25D366),
+          color: AppColors.accent,
           onPressed: () {
             notify.clearIncomingCall();
             call.joinCall(incoming!.callId, callerId: incoming!.callerId);

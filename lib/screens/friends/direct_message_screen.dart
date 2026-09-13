@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -527,59 +528,81 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bgApp,
-      appBar: AppBar(
-        title: Row(
-          children: [
-            GestureDetector(
-              onTap: widget.friend.profilePictureUrl != null
-                  ? () => showPhotoViewer(context, imageUrl: widget.friend.profilePictureUrl!)
-                  : null,
-              child: InitialAvatar(name: widget.friend.displayName, size: 34, imageUrl: widget.friend.profilePictureUrl),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.friend.displayName, overflow: TextOverflow.ellipsis),
-                  if (_notify.isFriendTyping(widget.friend.id))
-                    const Text(
-                      'typing...',
-                      style: TextStyle(fontSize: 12.5, color: AppColors.accent, fontWeight: FontWeight.w500),
-                    ),
-                ],
+    return Container(
+      // Warm gradient "wallpaper", not a flat fill -- the whole point of
+      // this screen's redesign (see AppColors.dmGradient's doc comment).
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: AppColors.dmText),
+          title: Row(
+            children: [
+              GestureDetector(
+                onTap: widget.friend.profilePictureUrl != null
+                    ? () => showPhotoViewer(context, imageUrl: widget.friend.profilePictureUrl!)
+                    : null,
+                child: InitialAvatar(name: widget.friend.displayName, size: 34, imageUrl: widget.friend.profilePictureUrl),
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.friend.displayName,
+                        overflow: TextOverflow.ellipsis, style: TextStyle(color: AppColors.dmText)),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: _notify.isFriendTyping(widget.friend.id)
+                          ? const Text(
+                              'typing...',
+                              key: ValueKey('typing'),
+                              style: TextStyle(fontSize: 12.5, color: AppColors.dmAccent, fontWeight: FontWeight.w500),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('idle')),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            if (_cognitiveSharingAvailable) _buildSharingAction(),
           ],
         ),
-        actions: [
-          if (_cognitiveSharingAvailable) _buildSharingAction(),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_offline) const OfflineBanner(),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 320),
-            transitionBuilder: (child, animation) => SizeTransition(
-              sizeFactor: animation,
-              alignment: const Alignment(0, -1),
-              child: FadeTransition(opacity: animation, child: child),
+        body: Column(
+          children: [
+            if (_offline) const OfflineBanner(),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 320),
+              transitionBuilder: (child, animation) => SizeTransition(
+                sizeFactor: animation,
+                alignment: const Alignment(0, -1),
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: _suggestion != null
+                  ? _CognitiveSuggestionCard(
+                      key: ValueKey(_suggestion!.id),
+                      suggestion: _suggestion!,
+                      onDismiss: _dismissSuggestion,
+                    )
+                  : const SizedBox.shrink(key: ValueKey('no-suggestion')),
             ),
-            child: _suggestion != null
-                ? _CognitiveSuggestionCard(
-                    key: ValueKey(_suggestion!.id),
-                    suggestion: _suggestion!,
-                    onDismiss: _dismissSuggestion,
-                  )
-                : const SizedBox.shrink(key: ValueKey('no-suggestion')),
-          ),
-          Expanded(child: _buildList()),
-          SafeArea(child: _buildInputBar()),
-        ],
+            Expanded(child: _buildList()),
+            SafeArea(child: _buildInputBar()),
+          ],
+        ),
       ),
     );
   }
@@ -602,7 +625,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.4 * pulse),
+                        color: AppColors.dmAccent.withValues(alpha: 0.4 * pulse),
                         blurRadius: 8 + 8 * pulse,
                         spreadRadius: 1 + 2 * pulse,
                       ),
@@ -616,7 +639,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
       child: IconButton(
         icon: _requestingSuggestion
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            : Icon(Icons.psychology_outlined, color: _shouldPulse ? AppColors.accent : null),
+            : Icon(Icons.psychology_outlined, color: _shouldPulse ? AppColors.dmAccent : null),
         tooltip: 'Find common ground',
         onPressed: _requestingSuggestion ? null : _findCommonGround,
       ),
@@ -626,71 +649,122 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
   Widget _buildList() {
     if (_messages == null) {
       if (_loading) return const Center(child: CircularProgressIndicator());
-      return Center(child: Text('Failed to load messages: $_loadError'));
+      return Center(child: Text('Failed to load messages: $_loadError', style: TextStyle(color: AppColors.dmText)));
     }
     if (_messages!.isEmpty) {
       return Center(
-        child: Text('Say hello to ${widget.friend.displayName}', style: TextStyle(color: AppColors.textSoft)),
+        child: Text('Say hello to ${widget.friend.displayName}', style: TextStyle(color: AppColors.dmTextSoft)),
       );
     }
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(10, 12, 10, 4),
       itemCount: _messages!.length,
-      itemBuilder: (context, i) => _MessageBubble(message: _messages![i], mine: _messages![i].sentByMe(_myUserId ?? -1)),
+      itemBuilder: (context, i) {
+        final message = _messages![i];
+        final prev = i > 0 ? _messages![i - 1] : null;
+        // Consecutive messages from the same person within a few minutes
+        // sit closer together (WhatsApp/Telegram-style grouping) instead of
+        // every bubble getting identical spacing regardless of context.
+        final tight = prev != null &&
+            prev.sentByMe(_myUserId ?? -1) == message.sentByMe(_myUserId ?? -1) &&
+            message.createdAt.difference(prev.createdAt).inMinutes.abs() < 5;
+        final bubble = _MessageBubble(message: message, mine: message.sentByMe(_myUserId ?? -1), tight: tight);
+        // Only messages that arrived after the initial load animate in --
+        // see _animateFromIndex's doc comment.
+        if (i < _animateFromIndex) return bubble;
+        return FadeSlideIn(index: i - _animateFromIndex, child: bubble);
+      },
     );
   }
 
   Widget _buildInputBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_uploadingAttachment)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: LinearProgressIndicator(value: _uploadProgress, minHeight: 3),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(value: _uploadProgress, minHeight: 3),
+              ),
             ),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (_uploadsEnabled)
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
-                  color: AppColors.textSoft,
-                  tooltip: 'Attach a photo, video, or file',
-                  onPressed: _uploadingAttachment ? null : _pickAttachment,
-                ),
+              // Floating frosted-glass pill, not a flat panel with a top
+              // border -- it sits directly on the gradient wallpaper the
+              // way a real "compose" surface would.
               Expanded(
-                child: TextField(
-                  controller: _controller,
-                  minLines: 1,
-                  maxLines: 5,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(hintText: 'Message', isDense: true),
-                  onSubmitted: (_) => _send(),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.dmPillFill,
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: AppColors.dmBubbleBorder),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        children: [
+                          if (_uploadsEnabled)
+                            IconButton(
+                              icon: const Icon(Icons.attach_file_rounded),
+                              color: AppColors.dmTextSoft,
+                              tooltip: 'Attach a photo, video, or file',
+                              onPressed: _uploadingAttachment ? null : _pickAttachment,
+                            ),
+                          Expanded(
+                            child: TextField(
+                              controller: _controller,
+                              minLines: 1,
+                              maxLines: 5,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: TextStyle(color: AppColors.dmText),
+                              cursorColor: AppColors.dmAccent,
+                              decoration: InputDecoration(
+                                hintText: 'Message',
+                                hintStyle: TextStyle(color: AppColors.dmTextSoft),
+                                isDense: true,
+                                filled: false,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onSubmitted: (_) => _send(),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               TapBounce(
                 child: Material(
-                  color: _hasText ? AppColors.accent : AppColors.border,
+                  color: _hasText ? AppColors.dmAccent : AppColors.dmPillFill,
                   shape: const CircleBorder(),
+                  elevation: _hasText ? 2 : 0,
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: _hasText && !_sending ? _send : null,
                     child: Padding(
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(12),
                       child: _sending
                           ? const SizedBox(
                               width: 20, height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : Icon(Icons.send_rounded, color: _hasText ? Colors.white : AppColors.textSoft, size: 20),
+                          : Icon(Icons.send_rounded, color: _hasText ? Colors.white : AppColors.dmTextSoft, size: 20),
                     ),
                   ),
                 ),
@@ -721,20 +795,20 @@ class _CognitiveSuggestionCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
       padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.12),
+        color: AppColors.dmAccent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+        border: Border.all(color: AppColors.dmAccent.withValues(alpha: 0.35)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.psychology_outlined, size: 18, color: AppColors.accent),
+          const Icon(Icons.psychology_outlined, size: 18, color: AppColors.dmAccent),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(suggestion.suggestionText, style: TextStyle(fontSize: 13.5, color: AppColors.text)),
+            child: Text(suggestion.suggestionText, style: TextStyle(fontSize: 13.5, color: AppColors.dmText)),
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 18),
+            icon: Icon(Icons.close, size: 18, color: AppColors.dmTextSoft),
             visualDensity: VisualDensity.compact,
             onPressed: onDismiss,
           ),
@@ -753,12 +827,12 @@ class _Tick extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state == TickState.sent) {
-      return Icon(Icons.done, size: 14, color: AppColors.textSoft);
+      return Icon(Icons.done, size: 14, color: AppColors.dmTextSoft);
     }
     return Icon(
       Icons.done_all,
       size: 14,
-      color: state == TickState.read ? AppColors.accent : AppColors.textSoft,
+      color: state == TickState.read ? AppColors.dmAccent : AppColors.dmTextSoft,
     );
   }
 }
@@ -766,8 +840,12 @@ class _Tick extends StatelessWidget {
 class _MessageBubble extends StatelessWidget {
   final DirectMessage message;
   final bool mine;
+  // True when the previous message was from the same person within a few
+  // minutes -- pulls this bubble closer to it (see _buildList) instead of
+  // every message getting identical spacing regardless of context.
+  final bool tight;
 
-  const _MessageBubble({required this.message, required this.mine});
+  const _MessageBubble({required this.message, required this.mine, this.tight = false});
 
   String _time(DateTime dt) {
     final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
@@ -781,16 +859,22 @@ class _MessageBubble extends StatelessWidget {
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.fromLTRB(12, 8, 10, 6),
+        margin: EdgeInsets.only(top: tight ? 2 : 10, bottom: 2),
+        padding: const EdgeInsets.fromLTRB(14, 10, 12, 7),
         decoration: BoxDecoration(
-          color: mine ? AppColors.bubbleOut : AppColors.bubbleIn,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(12),
-            topRight: const Radius.circular(12),
-            bottomLeft: Radius.circular(mine ? 12 : 2),
-            bottomRight: Radius.circular(mine ? 2 : 12),
-          ),
+          color: mine ? AppColors.dmBubbleOut : AppColors.dmBubbleIn,
+          // Uniform, tail-less rounding on every corner -- deliberately not
+          // WhatsApp's pointed-corner-on-the-outside-edge shape, matching
+          // the glassy rounded-rect bubbles of the reference design.
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.dmBubbleBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isAppDarkMode ? 0.22 : 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -807,13 +891,13 @@ class _MessageBubble extends StatelessWidget {
                 ),
               ),
             if (message.content.isNotEmpty) ...[
-              Text(message.content, style: TextStyle(fontSize: 15, color: AppColors.text)),
-              const SizedBox(height: 3),
+              Text(message.content, style: TextStyle(fontSize: 15, color: AppColors.dmText, height: 1.3)),
+              const SizedBox(height: 4),
             ],
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_time(message.createdAt), style: TextStyle(fontSize: 11, color: AppColors.textSoft)),
+                Text(_time(message.createdAt), style: TextStyle(fontSize: 11, color: AppColors.dmTextSoft)),
                 if (mine) ...[
                   const SizedBox(width: 3),
                   _Tick(state: message.tickState),
@@ -861,7 +945,7 @@ class _AttachmentContentState extends State<_AttachmentContent> {
     if (type.startsWith('image/')) {
       if (_broken) {
         if (widget.thumbnailDataUrl == null) {
-          return Text('Photo no longer available', style: TextStyle(fontSize: 12.5, color: AppColors.textSoft));
+          return Text('Photo no longer available', style: TextStyle(fontSize: 12.5, color: AppColors.dmTextSoft));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,7 +957,7 @@ class _AttachmentContentState extends State<_AttachmentContent> {
                 child: Image.memory(base64Decode(widget.thumbnailDataUrl!.split(',').last), fit: BoxFit.cover),
               ),
             ),
-            Text('Photo no longer available', style: TextStyle(fontSize: 11, color: AppColors.textSoft)),
+            Text('Photo no longer available', style: TextStyle(fontSize: 11, color: AppColors.dmTextSoft)),
           ],
         );
       }
@@ -912,18 +996,18 @@ class _AttachmentContentState extends State<_AttachmentContent> {
             constraints: const BoxConstraints(maxWidth: 220),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.bgApp,
+              color: Colors.black.withValues(alpha: isAppDarkMode ? 0.18 : 0.04),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: AppColors.dmBubbleBorder),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(isVideo ? Icons.videocam_outlined : Icons.insert_drive_file_outlined, size: 20, color: AppColors.textSoft),
+                Icon(isVideo ? Icons.videocam_outlined : Icons.insert_drive_file_outlined, size: 20, color: AppColors.dmTextSoft),
                 const SizedBox(width: 8),
-                Flexible(child: Text(isVideo ? 'Video' : filename, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+                Flexible(child: Text(isVideo ? 'Video' : filename, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: AppColors.dmText))),
                 const SizedBox(width: 6),
-                Icon(Icons.open_in_new, size: 14, color: AppColors.textSoft),
+                Icon(Icons.open_in_new, size: 14, color: AppColors.dmTextSoft),
               ],
             ),
           ),
@@ -937,12 +1021,12 @@ class _AttachmentContentState extends State<_AttachmentContent> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.psychology_outlined, size: 13, color: AppColors.accent),
+                  const Icon(Icons.psychology_outlined, size: 13, color: AppColors.dmAccent),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
                       widget.summary!,
-                      style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textSoft, height: 1.3),
+                      style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.dmTextSoft, height: 1.3),
                     ),
                   ),
                 ],

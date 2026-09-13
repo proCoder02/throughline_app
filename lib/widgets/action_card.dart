@@ -166,7 +166,11 @@ class _ActionCardState extends State<ActionCard> {
   Widget _card({required List<Widget> children}) => Container(
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: AppColors.panel, borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: isAppDarkMode ? 0.18 : 0.04),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.dmBubbleBorder),
+        ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: children),
       );
 
@@ -178,19 +182,19 @@ class _ActionCardState extends State<ActionCard> {
       return _card(children: [
         Text(
           'Order${orderId != null ? ' #$orderId' : ''} placed and being tracked live.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSoft),
+          style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft),
         ),
         const SizedBox(height: 4),
         Text(_tracking?['title'] as String? ?? 'Order placed', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
         if ((_tracking?['subtitle'] as String?)?.isNotEmpty == true)
-          Text(_tracking!['subtitle'] as String, style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+          Text(_tracking!['subtitle'] as String, style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
         if ((_tracking?['eta_text'] as String?)?.isNotEmpty == true)
-          Text('ETA: ${_tracking!['eta_text']}', style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+          Text('ETA: ${_tracking!['eta_text']}', style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
         if (pct != null) ...[
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(value: pct / 100, minHeight: 6, backgroundColor: AppColors.border),
+            child: LinearProgressIndicator(value: pct / 100, minHeight: 6, backgroundColor: AppColors.dmBubbleBorder),
           ),
         ],
       ]);
@@ -201,7 +205,7 @@ class _ActionCardState extends State<ActionCard> {
         Row(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.restaurant, size: 16),
           const SizedBox(width: 8),
-          Flexible(child: Text(_result ?? '', style: TextStyle(fontSize: 13.5, color: AppColors.textSoft))),
+          Flexible(child: Text(_result ?? '', style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft))),
         ]),
       ]);
     }
@@ -212,14 +216,14 @@ class _ActionCardState extends State<ActionCard> {
       // itself, with whatever real QR/UPI UI it renders.
       return _card(children: [
         Text("Pay to complete the order -- it's placed the moment payment completes.",
-            style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+            style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
         const SizedBox(height: 8),
         if (_paymentLink != null)
           ElevatedButton(onPressed: _openPaymentLink, child: const Text('Open payment page'))
         else
-          Text('No payment link was returned -- check the backend logs.', style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+          Text('No payment link was returned -- check the backend logs.', style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
         const SizedBox(height: 8),
-        Text('Waiting for payment...', style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+        Text('Waiting for payment...', style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
       ]);
     }
 
@@ -231,7 +235,7 @@ class _ActionCardState extends State<ActionCard> {
       if (need.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text(need, style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+          child: Text(need, style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
         ),
       ...items.map((item) {
         final menuItemId = (item as Map)['menu_item_id'] as String?;

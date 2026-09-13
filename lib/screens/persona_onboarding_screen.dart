@@ -95,7 +95,7 @@ class _PersonaOnboardingScreenState extends State<PersonaOnboardingScreen> {
               label: Text(o),
               selected: isSelected,
               onSelected: (v) => setState(() => v ? selected.add(o) : selected.remove(o)),
-              selectedColor: AppColors.bubbleOut,
+              selectedColor: AppColors.accent.withValues(alpha: 0.18),
               checkmarkColor: AppColors.accentDark,
               labelStyle: TextStyle(color: isSelected ? AppColors.accentDark : AppColors.text),
               side: BorderSide(color: isSelected ? AppColors.accent : AppColors.border),

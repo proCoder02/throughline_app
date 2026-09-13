@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 
 import '../firebase_options.dart';
 import 'api_client.dart';
@@ -300,11 +301,23 @@ Future<void> dismissNativeRinging(int callId) async {
   }
 }
 
-/// Posts a real system notification, even while the app is foregrounded --
-/// FCM's own `notification` block never auto-displays in that state (that's
-/// standard OS behavior, not something toggled server-side), so a
-/// foreground-only in-app SnackBar was the only heads-up a new task ever
-/// got. This is the actual visible banner instead.
+/// Posts a real system notification, but ONLY while the app is genuinely
+/// foregrounded -- FCM's own `notification` block never auto-displays in
+/// that state (that's standard OS behavior, not something toggled
+/// server-side), so a foreground-only in-app SnackBar was the only heads-up
+/// a new task ever got, and this is the actual visible banner instead.
+///
+/// The lifecycleState check below is the actual fix for a real duplicate-
+/// notification bug: every caller of this function previously gated on a
+/// narrower condition (e.g. "is this specific friend's thread open"), not
+/// on whether the app was foregrounded at all -- so if the WS socket was
+/// still briefly connected right as the app backgrounded (a normal, common
+/// window, not an edge case), this function fired AND the OS separately
+/// auto-posted send_fcm_to_user's own `notification` payload, showing the
+/// same event twice on the same device. Skipping here when not resumed
+/// leaves the OS's own auto-posted notification as the sole one in every
+/// non-foreground case, matching this function's own original intent (it
+/// only ever needed to cover the gap FCM leaves while foregrounded).
 ///
 /// conversationId/description, when given (task_created only), make the
 /// notification deep-link to that conversation and add a distinct "Ask"
@@ -318,6 +331,7 @@ Future<void> showLocalNotification(
   bool isDigest = false,
 }) async {
   if (!Platform.isAndroid) return;
+  if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
   try {
     await _kCallChannel.invokeMethod('showLocalNotification', {
       'title': title,

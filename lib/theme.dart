@@ -1,5 +1,14 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+/// Bold poster-style display font for screen titles/headlines app-wide --
+/// matches the heavy black-weight grotesque used across every reference
+/// mockup for this redesign (e.g. "BROWSE COURSES"/"LEARN BETTER THINGS").
+/// Archivo Black only ships one weight (900), which is the point -- every
+/// title using it reads as intentionally bold, not a lighter accidental one.
+TextStyle appHeadlineFont({required Color color, double fontSize = 20, double? letterSpacing}) =>
+    GoogleFonts.archivoBlack(color: color, fontSize: fontSize, letterSpacing: letterSpacing, height: 1.05);
 
 /// Flipped by ThemeProvider whenever the effective brightness changes.
 /// AppColors' mode-dependent fields below read this instead of the app
@@ -26,17 +35,26 @@ class AppColors {
 
   // Brand/semantic colors -- legible and on-brand in both modes as-is, kept
   // as real compile-time constants (no need to touch their call sites).
-  static const accent = Color(0xFF00A884);
-  static const accentDark = Color(0xFF008069);
+  // Warm amber/yellow, not the original teal/green -- that green read as a
+  // clashing "tint" against the warm gradient redesign everywhere it still
+  // showed through (the global ColorScheme seed, default button/focus-ring
+  // colors, and the handful of screens outside the redesign), so the brand
+  // accent itself moved to this color rather than leaving two competing
+  // accents in the app. Same value as dmAccent/dmAccentDark below -- those
+  // stay separately named for provenance (introduced mid-redesign before
+  // this became the real brand color) but are intentionally identical now.
+  static const accent = Color(0xFFD98E4A);
+  static const accentDark = Color(0xFFB06B2E);
   static const danger = Color(0xFFDC3545);
-  static const railIconActive = Color(0xFF00A884);
+  static const railIconActive = Color(0xFFD98E4A);
   static const unreadBadge = Color(0xFFEA0038);
 
-  // -- 1:1 direct-message screen only (see direct_message_screen.dart) --
-  // A dedicated warm-gradient "wallpaper" + glassy, tail-less bubble
-  // treatment, kept separate from bgApp/panel/chatBg/bubbleIn/bubbleOut
-  // above so ChatThreadScreen's existing WhatsApp-style look stays exactly
-  // as-is -- this redesign is scoped to real 1:1 friend chat only.
+  // -- Main-tab screens redesign (Chats/Tasks/Profiles/Friends/Settings +
+  // the 1:1 direct-message screen) -- a warm-gradient "wallpaper" + glassy,
+  // tail-less card/bubble treatment, kept separate from bgApp/panel/chatBg/
+  // bubbleIn/bubbleOut above so ChatThreadScreen and GlobalChatScreen (not
+  // part of this redesign) keep their existing WhatsApp-style look exactly
+  // as-is.
   static List<Color> get dmGradient => isAppDarkMode
       ? const [Color(0xFF1A1410), Color(0xFF2B1B12), Color(0xFF150F0C)]
       : const [Color(0xFFFDF8F1), Color(0xFFF3E6D3), Color(0xFFFDF8F1)];
@@ -48,6 +66,15 @@ class AppColors {
   static Color get dmTextSoft => isAppDarkMode ? const Color(0xFFA79A8D) : const Color(0xFF8A7C6E);
   static Color get dmPillFill =>
       isAppDarkMode ? Colors.white.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.85);
+
+  // Warm amber accent for the redesigned screens -- the app-wide teal/green
+  // `accent` above (kept for buildAppTheme() and every screen not part of
+  // this redesign) read as a clashing "green line" against the warm
+  // gradient wallpaper, so every accent use inside the redesigned screens
+  // (focus rings, cursors, send/FAB buttons, active icons) uses this
+  // instead, matching the reference design's warm palette.
+  static const dmAccent = Color(0xFFD98E4A);
+  static const dmAccentDark = Color(0xFFB06B2E);
 }
 
 /// Builds a ThemeData reflecting whatever isAppDarkMode currently is --
@@ -74,11 +101,12 @@ ThemeData buildAppTheme() {
       foregroundColor: AppColors.text,
       elevation: 0.5,
       surfaceTintColor: AppColors.panel,
+      titleTextStyle: appHeadlineFont(color: AppColors.text, fontSize: 19),
     ),
     dividerColor: AppColors.border,
     textTheme: TextTheme(
-      titleLarge: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600),
-      titleMedium: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600),
+      titleLarge: appHeadlineFont(color: AppColors.text, fontSize: 20),
+      titleMedium: appHeadlineFont(color: AppColors.text, fontSize: 16),
       labelLarge: TextStyle(color: AppColors.text),
       bodyMedium: TextStyle(color: AppColors.text),
       bodySmall: TextStyle(color: AppColors.textSoft),
