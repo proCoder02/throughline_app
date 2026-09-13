@@ -14,13 +14,18 @@ class ChatListSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
-      baseColor: AppColors.border,
-      highlightColor: AppColors.panel,
-      child: ListView.separated(
+      baseColor: AppColors.dmBubbleBorder,
+      highlightColor: AppColors.dmPillFill,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         itemCount: rowCount,
-        separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
-        itemBuilder: (_, __) => Padding(
+        itemBuilder: (_, __) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.dmBubbleIn,
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -55,8 +60,8 @@ class MessageListSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
-      baseColor: AppColors.border,
-      highlightColor: AppColors.panel,
+      baseColor: AppColors.dmBubbleBorder,
+      highlightColor: AppColors.dmPillFill,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: itemCount,
@@ -66,7 +71,7 @@ class MessageListSkeleton extends StatelessWidget {
             margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             height: 36,
             width: 160 + (i % 3) * 40,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
           ),
         ),
       ),

@@ -12,13 +12,13 @@ import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/blinking_dot.dart';
 import '../../widgets/chat_list_skeleton.dart';
+import '../../widgets/dissolving_typing_indicator.dart';
 import '../../widgets/fade_slide_in.dart';
 import '../../widgets/live_timer_text.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/pulsing_halo.dart';
 import '../../widgets/tag_chip.dart';
-import '../../widgets/typing_indicator.dart';
 
 class ChatThreadScreen extends StatefulWidget {
   final int conversationId;
@@ -62,6 +62,11 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   bool _offline = false;
   bool _hasText = false;
   ChatMessage? _replyingTo;
+
+  // Same pattern as GlobalChatBody -- see its own doc comments on these.
+  bool _typingDissolving = false;
+  ChatMessage? _streamingMessage;
+  ChatMessage? _pendingReply;
 
   @override
   void initState() {
@@ -188,16 +193,19 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
         transcript: live && transcript!.isNotEmpty ? transcript : null,
       );
       if (!mounted) return;
+      final assistantMessage = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
+      // Not appended to _messages yet -- see GlobalChatBody's _pendingReply
+      // doc comment for why this must not move the typing row's index.
       setState(() {
-        _messages = [..._messages, ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now())];
+        _sending = false;
+        _typingDissolving = true;
+        _pendingReply = assistantMessage;
       });
-      _scrollToEnd();
     } catch (_) {
       if (mounted) {
+        setState(() => _sending = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to send message')));
       }
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -263,9 +271,22 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     // how an already-cached conversation opens), and only the message list
     // itself swaps from skeleton to real content in place.
     final title = _conversation?.displayTitle ?? (isLive ? 'New conversation' : 'Untitled conversation');
-    return Scaffold(
-      backgroundColor: AppColors.chatBg,
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
         title: Row(
           children: [
             InitialAvatar(name: title, size: 36),
@@ -275,9 +296,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title, overflow: TextOverflow.ellipsis),
+                  Text(title, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppColors.dmText)),
                   Text('Ask about this conversation',
-                      style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+                      style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
                 ],
               ),
             ),
@@ -304,15 +325,42 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                   child: _loading
                       ? const MessageListSkeleton()
                       : _messages.isEmpty
-                          ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.textSoft)))
+                          ? Center(child: Text('Ask a question about this conversation', style: TextStyle(color: AppColors.dmTextSoft)))
                           : ListView.builder(
                               controller: _scrollController,
                               padding: const EdgeInsets.symmetric(vertical: 8),
-                              itemCount: _messages.length + (_sending ? 1 : 0),
+                              itemCount: _messages.length + ((_sending || _typingDissolving) ? 1 : 0),
                               itemBuilder: (context, i) {
-                                if (i == _messages.length) return const TypingIndicator();
+                                if (i == _messages.length) {
+                                  return DissolvingTypingIndicator(
+                                    disappear: _typingDissolving,
+                                    onDissolved: () {
+                                      if (!mounted) return;
+                                      final reply = _pendingReply;
+                                      setState(() {
+                                        _typingDissolving = false;
+                                        if (reply != null) {
+                                          _messages = [..._messages, reply];
+                                          _streamingMessage = reply;
+                                          _pendingReply = null;
+                                        }
+                                      });
+                                      if (reply != null) _scrollToEnd();
+                                    },
+                                  );
+                                }
                                 final message = _messages[i];
-                                return MessageBubble(message: message, onReply: () => _startReply(message));
+                                return MessageBubble(
+                                  message: message,
+                                  onReply: () => _startReply(message),
+                                  streamIn: identical(message, _streamingMessage),
+                                  onStreamTick: () => _scrollToEnd(animate: false),
+                                  onStreamDone: () {
+                                    if (identical(message, _streamingMessage) && mounted) {
+                                      setState(() => _streamingMessage = null);
+                                    }
+                                  },
+                                );
                               },
                             ),
                 ),
@@ -344,9 +392,10 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                                     child: BackdropFilter(
                                       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                                       child: Chip(
-                                        backgroundColor: AppColors.panel.withValues(alpha: 0.12),
-                                        side: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
-                                        label: Text(listen.speakerNames[idx] ?? 'Speaker $idx'),
+                                        backgroundColor: AppColors.dmPillFill,
+                                        side: BorderSide(color: AppColors.dmBubbleBorder),
+                                        label: Text(listen.speakerNames[idx] ?? 'Speaker $idx',
+                                            style: TextStyle(color: AppColors.dmText)),
                                         deleteIcon: const Icon(Icons.edit, size: 16),
                                         onDeleted: () => listen.openPrompt(idx),
                                       ),
@@ -388,8 +437,8 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                                     label: t,
                                     onTap: () => _tapTopic(listen, t),
                                     onDismiss: () => listen.removeTopic(t),
-                                    backgroundColor: AppColors.accent.withValues(alpha: 0.12),
-                                    borderColor: AppColors.accent.withValues(alpha: 0.35),
+                                    backgroundColor: AppColors.dmAccent.withValues(alpha: 0.12),
+                                    borderColor: AppColors.dmAccent.withValues(alpha: 0.35),
                                   ),
                                 );
                               },
@@ -423,9 +472,8 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
             ),
           ),
           SafeArea(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              color: AppColors.bgApp,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -434,9 +482,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: AppColors.panel,
+                        color: AppColors.dmBubbleIn,
                         borderRadius: BorderRadius.circular(8),
-                        border: const Border(left: BorderSide(color: AppColors.accent, width: 3)),
+                        border: const Border(left: BorderSide(color: AppColors.dmAccent, width: 3)),
                       ),
                       child: Row(
                         children: [
@@ -445,7 +493,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                               _quoteSnippet(_replyingTo!),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: AppColors.textSoft, fontSize: 12.5),
+                              style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5),
                             ),
                           ),
                           IconButton(
@@ -458,18 +506,40 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                       ),
                     ),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      // Floating frosted-glass pill, matching the 1:1 chat
+                      // screen's compose bar -- see direct_message_screen.dart.
                       Expanded(
-                        child: TextField(
-                          controller: _promptController,
-                          decoration: InputDecoration(
-                            hintText: 'Ask a question...',
-                            filled: true,
-                            fillColor: AppColors.panel,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(28),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.dmPillFill,
+                                borderRadius: BorderRadius.circular(28),
+                                border: Border.all(color: AppColors.dmBubbleBorder),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              child: TextField(
+                                controller: _promptController,
+                                style: TextStyle(color: AppColors.dmText),
+                                cursorColor: AppColors.dmAccent,
+                                decoration: InputDecoration(
+                                  hintText: 'Ask a question...',
+                                  hintStyle: TextStyle(color: AppColors.dmTextSoft),
+                                  filled: false,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                ),
+                                onSubmitted: (_) => _send(listen),
+                              ),
+                            ),
                           ),
-                          onSubmitted: (_) => _send(listen),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -481,7 +551,11 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                       if (isLive && !_hasText && listen.startedAt != null) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          decoration: BoxDecoration(color: AppColors.panel, borderRadius: BorderRadius.circular(16)),
+                          decoration: BoxDecoration(
+                            color: AppColors.dmPillFill,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.dmBubbleBorder),
+                          ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -507,7 +581,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                         child: _hasText
                             ? CircleAvatar(
                                 key: const ValueKey('send'),
-                                backgroundColor: AppColors.accent,
+                                backgroundColor: AppColors.dmAccent,
                                 child: IconButton(
                                   icon: const Icon(Icons.send, color: Colors.white, size: 20),
                                   onPressed: _sending ? null : () => _send(listen),
@@ -529,9 +603,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                                   )
                                 : CircleAvatar(
                                     key: const ValueKey('mic-idle'),
-                                    backgroundColor: AppColors.panel,
+                                    backgroundColor: AppColors.dmPillFill,
                                     child: IconButton(
-                                      icon: const Icon(Icons.mic, color: AppColors.accent, size: 20),
+                                      icon: const Icon(Icons.mic, color: AppColors.dmAccent, size: 20),
                                       tooltip: 'Resume listening on this conversation',
                                       onPressed: () => _toggleListen(listen),
                                     ),
@@ -544,6 +618,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -564,15 +639,15 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.panel.withValues(alpha: isAppDarkMode ? 0.55 : 0.7),
+              color: AppColors.dmBubbleIn.withValues(alpha: isAppDarkMode ? 0.75 : 0.85),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: isAppDarkMode ? 0.1 : 0.4)),
+              border: Border.all(color: AppColors.dmBubbleBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Speaker $idx — who is this?', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text('Speaker $idx — who is this?', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dmText)),
                 const SizedBox(height: 8),
                 // Fixed-height horizontal scroll, not a Wrap --
                 // listen.knownSpeakers is every speaker named across all

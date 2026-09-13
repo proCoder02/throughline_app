@@ -6,7 +6,7 @@ import '../theme.dart';
 /// on-brand instead of landing on something muddy/clashing -- same idea as
 /// WhatsApp/Slack's own contact-color palettes.
 const _avatarPalette = [
-  Color(0xFF00A884), // brand accent, kept as one option so it doesn't disappear
+  AppColors.accent, // brand accent, kept as one option so it doesn't disappear
   Color(0xFFE17055),
   Color(0xFF6C5CE7),
   Color(0xFF0984E3),

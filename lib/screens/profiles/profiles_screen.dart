@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +13,10 @@ import '../../widgets/offline_banner.dart';
 import 'profile_detail_screen.dart';
 
 class ProfilesScreen extends StatefulWidget {
-  const ProfilesScreen({super.key});
+  /// Opens HomeShell's side drawer (the retired bottom nav's replacement).
+  final VoidCallback? onOpenDrawer;
+
+  const ProfilesScreen({super.key, this.onOpenDrawer});
 
   @override
   State<ProfilesScreen> createState() => _ProfilesScreenState();
@@ -64,20 +69,57 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
-    return Scaffold(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
+        titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+        leading: widget.onOpenDrawer != null
+            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            : null,
         title: const Text('Profiles'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search by name',
-                prefixIcon: Icon(Icons.search),
-                isDense: true,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: TextField(
+                  style: TextStyle(color: AppColors.dmText),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name',
+                    hintStyle: TextStyle(color: AppColors.dmTextSoft),
+                    prefixIcon: Icon(Icons.search, color: AppColors.dmTextSoft),
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.dmPillFill,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: AppColors.dmAccent, width: 2)),
+                  ),
+                  onChanged: (v) => setState(() => _search = v.toLowerCase()),
+                ),
               ),
-              onChanged: (v) => setState(() => _search = v.toLowerCase()),
             ),
           ),
         ),
@@ -92,6 +134,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -109,13 +152,13 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
       return Center(
         child: Text(
           _search.isNotEmpty ? 'No profiles match your search' : 'No profiles yet',
-          style: TextStyle(color: AppColors.textSoft),
+          style: TextStyle(color: AppColors.dmTextSoft),
         ),
       );
     }
-    return ListView.separated(
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: profiles.length,
-      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border, indent: 78),
       itemBuilder: (context, i) {
         final p = profiles[i];
         return _ProfileRow(
@@ -144,37 +187,47 @@ class _ProfileRow extends StatelessWidget {
       DateFormat('MMM d, HH:mm').format(profile.lastSeen),
     ].join('  ·  ');
 
-    return Material(
-      color: AppColors.panel,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              InitialAvatar(name: profile.name),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      profile.name,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                InitialAvatar(name: profile.name),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        profile.name,
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.dmText),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Icon(Icons.chevron_right, color: AppColors.textSoft),
-            ],
+                Icon(Icons.chevron_right, color: AppColors.dmTextSoft),
+              ],
+            ),
           ),
         ),
       ),

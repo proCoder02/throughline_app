@@ -26,22 +26,29 @@ class ToggleParentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      activeThumbColor: AppColors.accent,
-      secondary: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: AppColors.accent.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(10),
+    // Material ancestor required -- SwitchListTile paints its own splash via
+    // Ink, invisible (and throws a debug warning) without a Material above
+    // it. Both call sites (Settings' and FriendProfile's cards) are now a
+    // plain Container, not a Material, so this is provided here instead.
+    return Material(
+      type: MaterialType.transparency,
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        activeThumbColor: AppColors.dmAccent,
+        secondary: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppColors.dmAccent.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: AppColors.dmAccent, size: 20),
         ),
-        child: Icon(icon, color: AppColors.accent, size: 20),
+        title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+        subtitle: Text(subtitle, style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
+        value: value,
+        onChanged: onChanged,
       ),
-      title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
-      subtitle: Text(subtitle, style: TextStyle(fontSize: 13, color: AppColors.textSoft)),
-      value: value,
-      onChanged: onChanged,
     );
   }
 }
@@ -95,14 +102,19 @@ class ToggleChildTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(bottom: isLast ? 0 : 2),
-      child: SwitchListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        activeThumbColor: AppColors.accent,
-        title: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.text)),
-        subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
-        value: value,
-        onChanged: enabled ? onChanged : null,
+      // Material ancestor required -- see ToggleParentTile's identical
+      // comment above.
+      child: Material(
+        type: MaterialType.transparency,
+        child: SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          activeThumbColor: AppColors.dmAccent,
+          title: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.text)),
+          subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: AppColors.textSoft)),
+          value: value,
+          onChanged: enabled ? onChanged : null,
+        ),
       ),
     );
   }

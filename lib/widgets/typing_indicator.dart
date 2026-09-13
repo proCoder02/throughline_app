@@ -34,7 +34,7 @@ class _TypingIndicatorState extends State<TypingIndicator> with SingleTickerProv
         final scale = 0.6 + 0.4 * wave;
         return Transform.scale(scale: scale, child: child);
       },
-      child: CircleAvatar(radius: 4, backgroundColor: AppColors.textSoft),
+      child: CircleAvatar(radius: 4, backgroundColor: AppColors.dmTextSoft),
     );
   }
 
@@ -46,9 +46,9 @@ class _TypingIndicatorState extends State<TypingIndicator> with SingleTickerProv
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.bubbleIn,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 1, offset: Offset(0, 1))],
+          color: AppColors.dmBubbleIn,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.dmBubbleBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

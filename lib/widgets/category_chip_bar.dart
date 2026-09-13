@@ -45,13 +45,13 @@ class CategoryChipBar extends StatelessWidget {
       label: Text(label),
       selected: isSelected,
       onSelected: (_) => onChanged(value),
-      selectedColor: AppColors.accent,
+      selectedColor: AppColors.dmAccent,
       labelStyle: TextStyle(
-        color: isSelected ? Colors.white : AppColors.text,
+        color: isSelected ? Colors.white : AppColors.dmText,
         fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
       ),
-      backgroundColor: AppColors.panel,
-      side: BorderSide(color: isSelected ? AppColors.accent : AppColors.border),
+      backgroundColor: AppColors.dmPillFill,
+      side: BorderSide(color: isSelected ? AppColors.dmAccent : AppColors.dmBubbleBorder),
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +17,10 @@ import 'direct_message_screen.dart';
 import 'friend_profile_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
+  /// Opens HomeShell's side drawer (the retired bottom nav's replacement).
+  final VoidCallback? onOpenDrawer;
+
+  const FriendsScreen({super.key, this.onOpenDrawer});
 
   @override
   State<FriendsScreen> createState() => _FriendsScreenState();
@@ -141,8 +146,26 @@ class _FriendsScreenState extends State<FriendsScreen> {
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
     final directMessageBadges = context.watch<NotifyProvider>().directMessageBadges;
-    return Scaffold(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
+        titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+        leading: widget.onOpenDrawer != null
+            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            : null,
         title: const Text('Friends'),
         actions: [
           IconButton(
@@ -160,17 +183,44 @@ class _FriendsScreenState extends State<FriendsScreen> {
               child: Column(
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
-                        child: TextField(
-                          controller: _codeController,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: const InputDecoration(hintText: "Friend's code", isDense: true),
-                          onSubmitted: (_) => _addFriend(),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                            child: TextField(
+                              controller: _codeController,
+                              textCapitalization: TextCapitalization.characters,
+                              style: TextStyle(color: AppColors.dmText),
+                              cursorColor: AppColors.dmAccent,
+                              decoration: InputDecoration(
+                                hintText: "Friend's code",
+                                hintStyle: TextStyle(color: AppColors.dmTextSoft),
+                                isDense: true,
+                                filled: true,
+                                fillColor: AppColors.dmPillFill,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                                enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                                focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: const BorderSide(color: AppColors.dmAccent, width: 2)),
+                              ),
+                              onSubmitted: (_) => _addFriend(),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.dmAccent, foregroundColor: Colors.white),
                         onPressed: _adding ? null : _addFriend,
                         child: _adding
                             ? const SizedBox(
@@ -196,7 +246,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Pick who to call, then confirm below.', style: TextStyle(color: AppColors.textSoft)),
+                child: Text('Pick who to call, then confirm below.', style: TextStyle(color: AppColors.dmTextSoft)),
               ),
             ),
           if (_offline) const OfflineBanner(),
@@ -213,6 +263,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 child: ElevatedButton(
                   onPressed: _callSelection.isEmpty ? null : _confirmGroupCall,
                   style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.dmAccent,
+                    foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   ),
@@ -221,6 +273,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
         ],
+      ),
       ),
     );
   }
@@ -233,28 +286,47 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final friends = _friends!;
     if (friends.isEmpty) {
       return Center(
-        child: Text('No friends added yet', style: TextStyle(color: AppColors.textSoft)),
+        child: Text('No friends added yet', style: TextStyle(color: AppColors.dmTextSoft)),
       );
     }
-    return ListView.separated(
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: friends.length,
-      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
       itemBuilder: (context, i) {
         final f = friends[i];
         if (_pickingCall) {
           final selected = _callSelection.contains(f.id);
-          return CheckboxListTile(
-            value: selected,
-            activeColor: AppColors.accent,
-            onChanged: (v) => setState(() {
-              if (v == true) {
-                _callSelection.add(f.id);
-              } else {
-                _callSelection.remove(f.id);
-              }
-            }),
-            secondary: InitialAvatar(name: f.displayName, imageUrl: f.profilePictureUrl),
-            title: Text(f.displayName),
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: AppColors.dmBubbleIn,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.dmBubbleBorder),
+            ),
+            // Material ancestor required -- CheckboxListTile paints its own
+            // background/shape/ink via Ink, which is otherwise invisible
+            // (and throws a debug warning) sitting directly inside a plain
+            // Container with no Material above it.
+            child: Material(
+              type: MaterialType.transparency,
+              borderRadius: BorderRadius.circular(16),
+              clipBehavior: Clip.antiAlias,
+              child: CheckboxListTile(
+                value: selected,
+                activeColor: AppColors.dmAccent,
+                checkColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                onChanged: (v) => setState(() {
+                  if (v == true) {
+                    _callSelection.add(f.id);
+                  } else {
+                    _callSelection.remove(f.id);
+                  }
+                }),
+                secondary: InitialAvatar(name: f.displayName, imageUrl: f.profilePictureUrl),
+                title: Text(f.displayName, style: TextStyle(color: AppColors.dmText, fontWeight: FontWeight.w600)),
+              ),
+            ),
           );
         }
         return _FriendRow(
@@ -290,58 +362,68 @@ class _FriendRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.panel,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              InitialAvatar(name: friend.displayName, imageUrl: friend.profilePictureUrl),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      friend.displayName,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        if (friend.lastCallAt != null) ...[
-                          Icon(
-                            friend.lastCallOutgoing == true ? Icons.call_made : Icons.call_received,
-                            size: 14,
-                            color: AppColors.textSoft,
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                        Expanded(
-                          child: Text(
-                            formatLastCallSubtitle(
-                              lastCallAt: friend.lastCallAt,
-                              lastCallOutgoing: friend.lastCallOutgoing,
-                              callCount: friend.callCount,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                InitialAvatar(name: friend.displayName, imageUrl: friend.profilePictureUrl),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        friend.displayName,
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.dmText),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          if (friend.lastCallAt != null) ...[
+                            Icon(
+                              friend.lastCallOutgoing == true ? Icons.call_made : Icons.call_received,
+                              size: 14,
+                              color: AppColors.dmTextSoft,
                             ),
-                            style: TextStyle(fontSize: 13.5, color: AppColors.textSoft),
-                            overflow: TextOverflow.ellipsis,
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: Text(
+                              formatLastCallSubtitle(
+                                lastCallAt: friend.lastCallAt,
+                                lastCallOutgoing: friend.lastCallOutgoing,
+                                callCount: friend.callCount,
+                              ),
+                              style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              _ChatButton(onPressed: onChat, unreadCount: unreadMessages),
-              const SizedBox(width: 8),
-              _CallButton(onPressed: onCall),
-            ],
+                const SizedBox(width: 8),
+                _ChatButton(onPressed: onChat, unreadCount: unreadMessages),
+                const SizedBox(width: 8),
+                _CallButton(onPressed: onCall),
+              ],
+            ),
           ),
         ),
       ),
@@ -357,14 +439,14 @@ class _ChatButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final button = Material(
-      color: AppColors.panel,
-      shape: CircleBorder(side: BorderSide(color: AppColors.border)),
+      color: AppColors.dmPillFill,
+      shape: CircleBorder(side: BorderSide(color: AppColors.dmBubbleBorder)),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onPressed,
         child: const Padding(
           padding: EdgeInsets.all(10),
-          child: Icon(Icons.chat_bubble_outline, color: AppColors.accentDark, size: 20),
+          child: Icon(Icons.chat_bubble_outline, color: AppColors.dmAccent, size: 20),
         ),
       ),
     );
@@ -379,14 +461,14 @@ class _CallButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.bubbleOut,
+      color: AppColors.dmBubbleOut,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onPressed,
         child: const Padding(
           padding: EdgeInsets.all(10),
-          child: Icon(Icons.call, color: AppColors.accentDark, size: 20),
+          child: Icon(Icons.call, color: AppColors.dmAccent, size: 20),
         ),
       ),
     );

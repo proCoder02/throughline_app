@@ -157,13 +157,29 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
-    return Scaffold(
-      backgroundColor: AppColors.bgApp,
-      appBar: AppBar(title: Text(_friend.displayName)),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: AppColors.dmGradient,
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.dmText),
+        titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
+        title: Text(_friend.displayName),
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          // ── Header: big avatar + name, WhatsApp-contact-screen style ──
+          // ── Header: big avatar + name, contact-card style ──
           Center(
             child: Column(
               children: [
@@ -171,33 +187,74 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   onTap: _friend.profilePictureUrl != null
                       ? () => showPhotoViewer(context, imageUrl: _friend.profilePictureUrl!)
                       : null,
-                  child: InitialAvatar(name: _friend.displayName, size: 88, imageUrl: _friend.profilePictureUrl),
+                  child: InitialAvatar(name: _friend.displayName, size: 92, imageUrl: _friend.profilePictureUrl),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 Text(
                   _friend.displayName,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.text),
+                  style: appHeadlineFont(color: AppColors.dmText, fontSize: 21),
                 ),
                 if (_friend.nickname != null && _friend.nickname!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(_friend.username, style: TextStyle(fontSize: 13.5, color: AppColors.textSoft)),
+                    child: Text(_friend.username, style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft)),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
 
-          // ── Action row ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _ProfileAction(icon: Icons.chat_bubble_outline, label: 'Message', onTap: _openChat),
-              const SizedBox(width: 36),
-              _ProfileAction(icon: Icons.call_outlined, label: 'Call', onTap: _startCall),
-              const SizedBox(width: 36),
-              _ProfileAction(icon: Icons.edit_outlined, label: 'Nickname', onTap: _rename),
-            ],
+          // ── Action row: glass circular chips, contact-card style ──
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.dmBubbleIn,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.dmBubbleBorder),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ProfileAction(icon: Icons.chat_bubble_outline, label: 'Message', onTap: _openChat),
+                _ProfileAction(icon: Icons.call_outlined, label: 'Call', onTap: _startCall),
+                _ProfileAction(icon: Icons.edit_outlined, label: 'Nickname', onTap: _rename),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Quick stats: real data only (call count / last call / mood) ──
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: AppColors.dmBubbleIn,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.dmBubbleBorder),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _StatTile(
+                    value: '${_friend.callCount}',
+                    label: _friend.callCount == 1 ? 'Call' : 'Calls',
+                  ),
+                ),
+                Container(width: 1, height: 30, color: AppColors.dmBubbleBorder),
+                Expanded(
+                  child: _StatTile(
+                    value: _friend.lastCallAt != null ? formatCallTimestamp(_friend.lastCallAt!) : '—',
+                    label: 'Last call',
+                  ),
+                ),
+                Container(width: 1, height: 30, color: AppColors.dmBubbleBorder),
+                Expanded(
+                  child: _StatTile(
+                    value: _mood?.emoji ?? '—',
+                    label: 'Mood',
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
 
@@ -213,7 +270,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                       Expanded(
                         child: Text(
                           "Couldn't load sharing settings.",
-                          style: TextStyle(fontSize: 13, color: AppColors.textSoft),
+                          style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft),
                         ),
                       ),
                       TextButton(onPressed: _loadSharing, child: const Text('Retry')),
@@ -232,7 +289,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     _sharing!.bothEnabled
                         ? 'You and ${_friend.displayName} can both see mutually-helpful suggestions.'
                         : 'Both of you need to turn this on before suggestions can appear.',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSoft),
+                    style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft),
                   ),
                 ),
                 // Same toggle-switch look as Settings' "Smart features" card
@@ -284,7 +341,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 )
               else if (_mood!.emoji == null)
-                Text('No mood data logged yet today.', style: TextStyle(color: AppColors.textSoft, fontSize: 13))
+                Text('No mood data logged yet today.', style: TextStyle(color: AppColors.dmTextSoft, fontSize: 13))
               else
                 Row(
                   children: [
@@ -300,7 +357,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                           ),
                           Text(
                             'As of ${DateFormat.Hm().format(_mood!.windowStart)}–${DateFormat.Hm().format(_mood!.windowEnd)}',
-                            style: TextStyle(fontSize: 12, color: AppColors.textSoft),
+                            style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft),
                           ),
                         ],
                       ),
@@ -319,7 +376,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 )
               else if (_callHistory!.isEmpty)
-                Text('No calls yet.', style: TextStyle(color: AppColors.textSoft, fontSize: 13))
+                Text('No calls yet.', style: TextStyle(color: AppColors.dmTextSoft, fontSize: 13))
               else
                 ..._callHistory!.map((c) {
                   final duration = c.endedAt?.difference(c.createdAt);
@@ -332,19 +389,19 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                               ? Icons.call_missed
                               : (c.outgoing ? Icons.call_made : Icons.call_received),
                           size: 18,
-                          color: c.missed ? AppColors.danger : AppColors.accent,
+                          color: c.missed ? AppColors.danger : AppColors.dmAccent,
                         ),
                         const SizedBox(width: 10),
                         Text(
                           c.missed ? 'Missed call' : (c.outgoing ? 'Outgoing' : 'Incoming'),
-                          style: TextStyle(fontSize: 14, color: c.missed ? AppColors.danger : AppColors.text),
+                          style: TextStyle(fontSize: 14, color: c.missed ? AppColors.danger : AppColors.dmText),
                         ),
                         const Spacer(),
                         Text(
                           !c.missed && duration != null && duration.inSeconds > 0
                               ? '${formatCallTimestamp(c.createdAt)} · ${_formatDuration(duration)}'
                               : formatCallTimestamp(c.createdAt),
-                          style: TextStyle(fontSize: 12.5, color: AppColors.textSoft),
+                          style: TextStyle(fontSize: 12.5, color: AppColors.dmTextSoft),
                         ),
                       ],
                     ),
@@ -369,6 +426,25 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final String value;
+  final String label;
+
+  const _StatTile({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dmText)),
+        const SizedBox(height: 3),
+        Text(label, style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
+      ],
     );
   }
 }
@@ -390,9 +466,9 @@ class _ProfileAction extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppColors.accent, size: 24),
+            Icon(icon, color: AppColors.dmAccent, size: 24),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 11.5, color: AppColors.textSoft)),
+            Text(label, style: TextStyle(fontSize: 11.5, color: AppColors.dmTextSoft)),
           ],
         ),
       ),
@@ -413,15 +489,21 @@ class _ProfileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      // Material ancestor required -- the Cognitive Sharing toggles below
+      // are ListTile-based and paint their own ink via Ink, which is
+      // otherwise invisible (and throws a debug warning) inside a plain,
+      // non-Material Container.
       child: Material(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -429,7 +511,7 @@ class _ProfileCard extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   title,
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.dmText),
                 ),
               ),
               ...children,
