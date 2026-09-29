@@ -19,12 +19,21 @@ class PulsingHalo extends StatefulWidget {
   /// into a plain circle while recording), false for a stadium/pill shape.
   final bool circular;
 
+  /// Delays the very first cycle only -- lets a row of several PulsingHalo
+  /// instances (e.g. Home's world-teaser friend icons) start visibly
+  /// out-of-phase with each other instead of all pulsing in perfect unison,
+  /// which reads as more organic/alive. Ignored by didUpdateWidget's
+  /// inactive->active transition (only used by widgets that are active from
+  /// the moment they're created).
+  final Duration startDelay;
+
   const PulsingHalo({
     super.key,
     required this.active,
     required this.color,
     required this.child,
     this.circular = true,
+    this.startDelay = Duration.zero,
   });
 
   @override
@@ -37,7 +46,15 @@ class _PulsingHaloState extends State<PulsingHalo> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    if (widget.active) _controller.repeat();
+    if (widget.active) {
+      if (widget.startDelay == Duration.zero) {
+        _controller.repeat();
+      } else {
+        Future.delayed(widget.startDelay, () {
+          if (mounted && widget.active) _controller.repeat();
+        });
+      }
+    }
   }
 
   @override

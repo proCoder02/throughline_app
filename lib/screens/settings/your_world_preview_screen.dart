@@ -6,11 +6,12 @@ import '../../services/friend_service.dart';
 import '../../theme.dart';
 import '../../widgets/pulsing_halo.dart';
 
-/// Concept sandbox for a possible "Your World" screen -- a vertical
-/// relationship thread ("You" at the top, real friends branching alternately
-/// left/right off it) with a bottom detail card for whichever friend is
-/// tapped. Reachable only from Settings, no production screen references
-/// this.
+/// "Your World" screen -- a vertical relationship thread ("You" at the top,
+/// real friends branching alternately left/right off it) with a bottom
+/// detail card for whichever friend is tapped. Started as a Settings ->
+/// Experimental sandbox (that entry point is still there) but is now also
+/// pushed directly from Home's _WorldTeaserCard, so this is a real,
+/// user-facing destination, not just a concept preview anymore.
 ///
 /// Friends only for now, real data from `GET /friends` (+ a lazy per-friend
 /// `GET /friends/<id>/mood` on tap) -- an earlier version also tried to
@@ -50,6 +51,20 @@ class _YourWorldPreviewScreenState extends State<YourWorldPreviewScreen> {
   }
 
   Future<void> _load() async {
+    // Cache-first, same convention as every other list screen in the app
+    // (Chats/Tasks/Profiles/Friends) -- without this, opening this screen
+    // right after Home (which just fetched this exact same friends list a
+    // moment earlier) still threw away that warm cache and showed a
+    // full-screen spinner for the whole network round trip, which is
+    // exactly the "brief ring" flash being reported.
+    final cached = _friendService.listCached();
+    if (cached != null) {
+      setState(() {
+        _friends = cached;
+        _activeFriendId ??= cached.isNotEmpty ? cached.first.id : null;
+      });
+      if (_activeFriendId != null) _ensureMood(_activeFriendId!);
+    }
     setState(() => _error = null);
     try {
       final friends = await _friendService.list();
@@ -60,7 +75,13 @@ class _YourWorldPreviewScreenState extends State<YourWorldPreviewScreen> {
       });
       if (_activeFriendId != null) _ensureMood(_activeFriendId!);
     } catch (e) {
-      if (mounted) setState(() => _error = e);
+      // Only surface the error screen if there's nothing to show at all --
+      // same "keep stale cache, fail silently in the background" rule
+      // every other list screen in the app follows (see e.g. ChatsScreen/
+      // TasksScreen's own _load()). Otherwise a flaky background refresh
+      // would yank away perfectly good cached data the user is already
+      // looking at.
+      if (mounted && _friends == null) setState(() => _error = e);
     }
   }
 

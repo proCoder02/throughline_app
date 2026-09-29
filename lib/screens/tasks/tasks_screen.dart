@@ -10,8 +10,10 @@ import '../../services/task_service.dart';
 import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/animated_task_checkbox.dart';
-import '../../widgets/category_menu.dart';
+import '../../widgets/category_chip_bar.dart';
+import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/fade_collapse.dart';
 import '../../widgets/fade_slide_in.dart';
 import '../../widgets/offline_banner.dart';
 import '../chats/chat_thread_screen.dart';
@@ -44,6 +46,13 @@ class _TasksScreenState extends State<TasksScreen> {
   // gets a 404, which then surfaced as a confusing "Failed to delete task"
   // even though the first delete had actually already succeeded.
   final Set<int> _deletedIds = {};
+
+  // Rows currently fading+collapsing out (FadeCollapse) -- distinct from
+  // _deletedIds above: a row stays in the visible list while its id is
+  // only here, so the delete reads as a smooth fade rather than an
+  // instant pop. It only actually leaves the list (added to _deletedIds)
+  // once that animation finishes -- see _performDelete.
+  final Set<int> _fadingIds = {};
 
   static const _statusLabels = {'open': 'Open', 'done': 'Done', 'all': 'All'};
 
@@ -195,7 +204,18 @@ class _TasksScreenState extends State<TasksScreen> {
     );
     if (confirmed != true) return;
     HapticFeedback.mediumImpact();
-    setState(() => _deletedIds.add(task.id));
+    // Starts the fade+collapse (see FadeCollapse wrapping this row below);
+    // _performDelete actually removes it and calls the API once that
+    // animation finishes, not before -- was an instant disappearance.
+    setState(() => _fadingIds.add(task.id));
+  }
+
+  Future<void> _performDelete(Task task) async {
+    if (!mounted) return;
+    setState(() {
+      _fadingIds.remove(task.id);
+      _deletedIds.add(task.id);
+    });
     try {
       await _service.delete(task.id);
       _reload();
@@ -242,20 +262,26 @@ class _TasksScreenState extends State<TasksScreen> {
         iconTheme: IconThemeData(color: AppColors.dmText),
         titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
         leading: widget.onOpenDrawer != null
-            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            ? IconButton(icon: const Icon(Icons.menu), tooltip: 'Open menu', onPressed: widget.onOpenDrawer)
             : null,
         title: const Text('Tasks'),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.filter_list),
-            initialValue: _status,
-            onSelected: _switchStatus,
-            itemBuilder: (context) => _statusLabels.entries
-                .map((e) => PopupMenuItem(value: e.key, child: Text(e.value)))
-                .toList(),
+        // Both filters used to live behind hidden icon-menus with no
+        // visible indicator of what was currently selected -- a different,
+        // less discoverable pattern than Chats' persistent chip bar for
+        // the same "filter by category" concept (see this session's UX
+        // audit). Now a persistent, always-visible pair of chip rows,
+        // matching Chats exactly for category.
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(88),
+          child: Column(
+            children: [
+              _StatusChipBar(selected: _status, onChanged: _switchStatus),
+              const SizedBox(height: 6),
+              CategoryChipBar(selected: _category, onChanged: (v) => setState(() => _category = v)),
+              const SizedBox(height: 8),
+            ],
           ),
-          CategoryMenu(selected: _category, onChanged: (v) => setState(() => _category = v)),
-        ],
+        ),
       ),
       body: Column(
         children: [
@@ -274,7 +300,10 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Widget _buildBody() {
     if (_tasks == null) {
-      if (_loading) return const Center(child: CircularProgressIndicator());
+      // Same shimmer skeleton as Chats' cold-start load -- was a bare
+      // spinner here, a different loading treatment for a structurally
+      // identical "list is loading" state (see this session's UX audit).
+      if (_loading) return const ChatListSkeleton();
       return Center(child: Text('Failed to load tasks: $_error'));
     }
     var items = _tasks!.where((t) => !_deletedIds.contains(t.id)).toList();
@@ -299,29 +328,78 @@ class _TasksScreenState extends State<TasksScreen> {
         return FadeSlideIn(
           key: ValueKey('fade_${task.id}'),
           index: i,
-          child: Slidable(
-            key: ValueKey(task.id),
-            endActionPane: ActionPane(
-              motion: const DrawerMotion(),
-              extentRatio: 0.25,
-              children: [
-                SlidableAction(
-                  onPressed: (_) => _confirmDelete(task),
-                  backgroundColor: AppColors.danger,
-                  foregroundColor: Colors.white,
-                  icon: Icons.delete_outline,
-                  label: 'Delete',
-                ),
-              ],
-            ),
-            child: _TaskRow(
-              task: task,
-              onToggle: () => _toggle(task),
-              onEdit: () => _edit(task),
+          child: FadeCollapse(
+            fading: _fadingIds.contains(task.id),
+            onFadedOut: () => _performDelete(task),
+            child: Slidable(
+              key: ValueKey(task.id),
+              endActionPane: ActionPane(
+                motion: const DrawerMotion(),
+                extentRatio: 0.25,
+                children: [
+                  SlidableAction(
+                    onPressed: (_) => _confirmDelete(task),
+                    backgroundColor: AppColors.danger,
+                    foregroundColor: Colors.white,
+                    icon: Icons.delete_outline,
+                    label: 'Delete',
+                  ),
+                ],
+              ),
+              child: _TaskRow(
+                task: task,
+                onToggle: () => _toggle(task),
+                onEdit: () => _edit(task),
+              ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Persistent status filter chips (Open/Done/All) -- same visual language
+/// as CategoryChipBar (ChoiceChip, dmAccent when selected) so the two rows
+/// read as one consistent filter bar rather than two different controls.
+class _StatusChipBar extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  const _StatusChipBar({required this.selected, required this.onChanged});
+
+  static const _labels = {'open': 'Open', 'done': 'Done', 'all': 'All'};
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          for (final entry in _labels.entries) ...[
+            _chip(label: entry.value, value: entry.key),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chip({required String label, required String value}) {
+    final isSelected = selected == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => onChanged(value),
+      selectedColor: AppColors.dmAccent,
+      labelStyle: TextStyle(
+        color: isSelected ? Colors.white : AppColors.dmText,
+        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+      ),
+      backgroundColor: AppColors.dmPillFill,
+      side: BorderSide(color: isSelected ? AppColors.dmAccent : AppColors.dmBubbleBorder),
     );
   }
 }
@@ -395,6 +473,11 @@ class _TaskRowState extends State<_TaskRow> {
                     children: [
                       Text(
                         task.description,
+                        // Capped at 2 lines -- was unbounded, unlike every
+                        // other row-title text in the app (see this
+                        // session's UX audit).
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,

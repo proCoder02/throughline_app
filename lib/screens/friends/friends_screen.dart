@@ -12,6 +12,8 @@ import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/chat_list_skeleton.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/offline_banner.dart';
 import 'direct_message_screen.dart';
 import 'friend_profile_screen.dart';
@@ -164,7 +166,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         iconTheme: IconThemeData(color: AppColors.dmText),
         titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
         leading: widget.onOpenDrawer != null
-            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            ? IconButton(icon: const Icon(Icons.menu), tooltip: 'Open menu', onPressed: widget.onOpenDrawer)
             : null,
         title: const Text('Friends'),
         actions: [
@@ -280,13 +282,18 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   Widget _buildList(Map<int, int> directMessageBadges) {
     if (_friends == null) {
-      if (_loading) return const Center(child: CircularProgressIndicator());
+      // Same shimmer skeleton as Chats/Tasks/Profiles' cold-start load (see
+      // this session's UX audit) instead of a bare spinner.
+      if (_loading) return const ChatListSkeleton();
       return Center(child: Text('Failed to load friends: $_loadError'));
     }
     final friends = _friends!;
     if (friends.isEmpty) {
-      return Center(
-        child: Text('No friends added yet', style: TextStyle(color: AppColors.dmTextSoft)),
+      // Shared EmptyState component instead of a bare gray sentence.
+      return const EmptyState(
+        icon: Icons.people_outline,
+        title: 'No friends added yet',
+        subtitle: 'Add a friend using their friend code from Settings.',
       );
     }
     return ListView.builder(
@@ -438,15 +445,22 @@ class _ChatButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final button = Material(
-      color: AppColors.dmPillFill,
-      shape: CircleBorder(side: BorderSide(color: AppColors.dmBubbleBorder)),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: const Padding(
-          padding: EdgeInsets.all(10),
-          child: Icon(Icons.chat_bubble_outline, color: AppColors.dmAccent, size: 20),
+    // Was 10px padding around a 20px icon (40x40 total) with no tooltip --
+    // below the 48px minimum tap target, and sitting directly adjacent to
+    // _CallButton below made a mis-tap between the two more likely. Bumped
+    // to reach 48px and labeled for screen readers.
+    final button = Tooltip(
+      message: 'Message',
+      child: Material(
+        color: AppColors.dmPillFill,
+        shape: CircleBorder(side: BorderSide(color: AppColors.dmBubbleBorder)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: const Padding(
+            padding: EdgeInsets.all(14),
+            child: Icon(Icons.chat_bubble_outline, color: AppColors.dmAccent, size: 20),
+          ),
         ),
       ),
     );
@@ -460,15 +474,20 @@ class _CallButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.dmBubbleOut,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: const Padding(
-          padding: EdgeInsets.all(10),
-          child: Icon(Icons.call, color: AppColors.dmAccent, size: 20),
+    // Same fix as _ChatButton above -- 48px tap target + tooltip instead of
+    // a 40px unlabeled one immediately next to it.
+    return Tooltip(
+      message: 'Call',
+      child: Material(
+        color: AppColors.dmBubbleOut,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: const Padding(
+            padding: EdgeInsets.all(14),
+            child: Icon(Icons.call, color: AppColors.dmAccent, size: 20),
+          ),
         ),
       ),
     );

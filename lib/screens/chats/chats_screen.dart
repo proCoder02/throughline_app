@@ -23,6 +23,7 @@ import '../../widgets/blinking_dot.dart';
 import '../../widgets/category_chip_bar.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/fade_collapse.dart';
 import '../../widgets/fade_slide_in.dart';
 import '../../widgets/insight_preview_card.dart';
 import '../../widgets/island_nav_bar.dart';
@@ -47,6 +48,12 @@ class ChatsScreen extends StatefulWidget {
 class _ChatsScreenState extends State<ChatsScreen> {
   final _service = ConversationService();
   List<Conversation>? _conversations;
+
+  // Rows currently fading+collapsing out (FadeCollapse) after a confirmed
+  // delete -- the row stays visible (fading) until this finishes, only
+  // then does it actually leave _conversations. See _confirmDelete.
+  final Set<int> _fadingIds = {};
+
   bool _loading = true;
   Object? _error;
   bool _offline = false;
@@ -192,15 +199,25 @@ class _ChatsScreenState extends State<ChatsScreen> {
     try {
       await _service.delete(c.id);
       if (!mounted) return;
-      setState(() {
-        _conversations = _conversations?.where((x) => x.id != c.id).toList();
-      });
+      // Starts the fade+collapse (see FadeCollapse wrapping this row
+      // below) once the delete is actually confirmed server-side --
+      // _removeFadedConversation removes it from the real list once that
+      // animation finishes, not before. Was an instant disappearance.
+      setState(() => _fadingIds.add(c.id));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Failed to delete conversation')));
       }
     }
+  }
+
+  void _removeFadedConversation(int id) {
+    if (!mounted) return;
+    setState(() {
+      _fadingIds.remove(id);
+      _conversations = _conversations?.where((x) => x.id != id).toList();
+    });
   }
 
   Future<void> _toggleListen(ListenProvider listen) async {
@@ -281,7 +298,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         iconTheme: IconThemeData(color: AppColors.dmText),
         titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
         leading: widget.onOpenDrawer != null
-            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            ? IconButton(icon: const Icon(Icons.menu), tooltip: 'Open menu', onPressed: widget.onOpenDrawer)
             : null,
         title: const Text('Chats'),
         bottom: PreferredSize(
@@ -537,29 +554,33 @@ class _ChatsScreenState extends State<ChatsScreen> {
           key: ValueKey('fade_${c.id}'),
           index: i,
           profile: _motionProfile,
-          child: Slidable(
-            key: ValueKey(c.id),
-            endActionPane: ActionPane(
-              motion: const DrawerMotion(),
-              extentRatio: 0.25,
-              children: [
-                SlidableAction(
-                  onPressed: (_) => _confirmDelete(c),
-                  backgroundColor: AppColors.danger,
-                  foregroundColor: Colors.white,
-                  icon: Icons.delete_outline,
-                  label: 'Delete',
-                ),
-              ],
-            ),
-            child: _ChatRow(
-              conversation: c,
-              unread: unread,
-              onTap: () {
-                notifyProvider.clearConversation(c.id);
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ChatThreadScreen(conversationId: c.id)));
-              },
+          child: FadeCollapse(
+            fading: _fadingIds.contains(c.id),
+            onFadedOut: () => _removeFadedConversation(c.id),
+            child: Slidable(
+              key: ValueKey(c.id),
+              endActionPane: ActionPane(
+                motion: const DrawerMotion(),
+                extentRatio: 0.25,
+                children: [
+                  SlidableAction(
+                    onPressed: (_) => _confirmDelete(c),
+                    backgroundColor: AppColors.danger,
+                    foregroundColor: Colors.white,
+                    icon: Icons.delete_outline,
+                    label: 'Delete',
+                  ),
+                ],
+              ),
+              child: _ChatRow(
+                conversation: c,
+                unread: unread,
+                onTap: () {
+                  notifyProvider.clearConversation(c.id);
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ChatThreadScreen(conversationId: c.id)));
+                },
+              ),
             ),
           ),
         );

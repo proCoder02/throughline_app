@@ -31,7 +31,17 @@ class StreamingFormattedText extends StatefulWidget {
 }
 
 class _StreamingFormattedTextState extends State<StreamingFormattedText> {
-  static const _tick = Duration(milliseconds: 24);
+  // 24ms (~42 ticks/sec) was rebuilding FormattedText's whole span/bullet
+  // tree AND re-jumping the message list's scroll position that often --
+  // each rebuild can reflow already-drawn lines as new characters wrap or
+  // a bullet group forms, and that many scroll-position writes per second
+  // compounds into visible jitter rather than a calm reveal. 60ms
+  // (~16-17 ticks/sec) still reads as smooth continuous typing -- most
+  // real typewriter-effect implementations land in this range -- while
+  // cutting total layout/paint/scroll work during a reply by more than
+  // half. perTick is recomputed from this automatically, so the overall
+  // reveal speed/duration is unchanged, only the step size is coarser.
+  static const _tick = Duration(milliseconds: 60);
   static const _msPerChar = 18;
   static const _maxTotalMs = 2600;
 

@@ -10,6 +10,7 @@ import '../../theme.dart';
 import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/photo_viewer.dart';
+import '../../widgets/settings_style_card.dart';
 import '../../widgets/toggle_group.dart';
 import 'direct_message_screen.dart';
 
@@ -259,7 +260,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           const SizedBox(height: 8),
 
           // ── Everything below is always visible -- no tab-switching ──
-          _ProfileCard(
+          SettingsStyleCard(
             title: 'Cognitive Sharing',
             children: [
               if (_sharing == null && _sharingLoadFailed)
@@ -332,7 +333,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             ],
           ),
 
-          _ProfileCard(
+          SettingsStyleCard(
             title: 'Mood',
             children: [
               if (_mood == null)
@@ -367,7 +368,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             ],
           ),
 
-          _ProfileCard(
+          SettingsStyleCard(
             title: 'Calls',
             children: [
               if (_callHistory == null)
@@ -458,11 +459,17 @@ class _ProfileAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Was 4px padding on each side -- the tightest tap cushion of any
+    // icon-affordance in the app per this session's audit. Bumped to 8px;
+    // kept modest (not the full 14px used by Friends' icon-only circles)
+    // since this Row has 3 items under spaceEvenly and a visible text
+    // label already, so it doesn't need as much invisible padding to read
+    // as tappable.
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -476,49 +483,3 @@ class _ProfileAction extends StatelessWidget {
   }
 }
 
-/// Same bordered-card look as Settings' _SettingsCard -- deliberately, so
-/// this profile screen's sections read as visually consistent with the
-/// settings page per the ask.
-class _ProfileCard extends StatelessWidget {
-  final String title;
-  final List<Widget> children;
-
-  const _ProfileCard({required this.title, required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppColors.dmBubbleIn,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.dmBubbleBorder),
-      ),
-      // Material ancestor required -- the Cognitive Sharing toggles below
-      // are ListTile-based and paint their own ink via Ink, which is
-      // otherwise invisible (and throws a debug warning) inside a plain,
-      // non-Material Container.
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  title,
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.dmText),
-                ),
-              ),
-              ...children,
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

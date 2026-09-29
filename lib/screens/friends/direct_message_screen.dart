@@ -19,6 +19,8 @@ import '../../state/auth_provider.dart';
 import '../../state/notify_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/chat_list_skeleton.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/photo_viewer.dart';
@@ -648,12 +650,18 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
 
   Widget _buildList() {
     if (_messages == null) {
-      if (_loading) return const Center(child: CircularProgressIndicator());
+      // Same shimmer-skeleton convention as every other list screen (see
+      // this session's UX audit) instead of a bare spinner -- the
+      // bubble-shaped variant, matching what this screen actually shows.
+      if (_loading) return const MessageListSkeleton();
       return Center(child: Text('Failed to load messages: $_loadError', style: TextStyle(color: AppColors.dmText)));
     }
     if (_messages!.isEmpty) {
-      return Center(
-        child: Text('Say hello to ${widget.friend.displayName}', style: TextStyle(color: AppColors.dmTextSoft)),
+      // Shared EmptyState component instead of a bare gray sentence, same
+      // personalized copy as before.
+      return EmptyState(
+        icon: Icons.waving_hand_outlined,
+        title: 'Say hello to ${widget.friend.displayName}',
       );
     }
     return ListView.builder(
@@ -809,6 +817,7 @@ class _CognitiveSuggestionCard extends StatelessWidget {
           ),
           IconButton(
             icon: Icon(Icons.close, size: 18, color: AppColors.dmTextSoft),
+            tooltip: 'Dismiss',
             visualDensity: VisualDensity.compact,
             onPressed: onDismiss,
           ),

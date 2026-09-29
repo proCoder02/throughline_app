@@ -200,6 +200,18 @@ class LocalCache {
     await setDirectMessages(friendId, [...existing, ...newMessages]);
   }
 
+  /// The most recent WeeklyDigest.generatedAt the user has actually opened
+  /// Home's "Your World" teaser for -- lets that card show a "new" cue only
+  /// when a relationship-category digest card genuinely postdates the last
+  /// one they saw, rather than perpetually or arbitrarily.
+  DateTime? getLastSeenWorldDigestAt() {
+    final raw = _box.get('last_seen_world_digest_at');
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  Future<void> setLastSeenWorldDigestAt(DateTime at) =>
+      _box.put('last_seen_world_digest_at', at.toUtc().toIso8601String());
+
   /// Wipes every cached chat/conversation -- called on logout so a second
   /// account signing in on the same device never sees the previous
   /// account's cached chats.

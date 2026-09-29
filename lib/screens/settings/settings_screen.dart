@@ -19,6 +19,7 @@ import '../../widgets/category_menu.dart';
 import '../../widgets/island_nav_bar.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/photo_viewer.dart';
+import '../../widgets/settings_style_card.dart';
 import '../../widgets/toggle_group.dart';
 import 'home_preview_screen.dart';
 import 'your_world_preview_screen.dart';
@@ -307,7 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         iconTheme: IconThemeData(color: AppColors.dmText),
         titleTextStyle: appHeadlineFont(color: AppColors.dmText, fontSize: 19),
         leading: widget.onOpenDrawer != null
-            ? IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer)
+            ? IconButton(icon: const Icon(Icons.menu), tooltip: 'Open menu', onPressed: widget.onOpenDrawer)
             : null,
         title: const Text('Settings'),
       ),
@@ -325,7 +326,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   12, 12, 12, 12 + IslandNavBar.barHeight + IslandNavBar.bottomMargin),
               children: [
                 if (_offline) const Padding(padding: EdgeInsets.only(bottom: 12), child: OfflineBanner()),
-                _SettingsCard(
+                SettingsStyleCard(
                   children: [
                     Row(
                       children: [
@@ -348,20 +349,31 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                               ),
                             ),
                             if (_uploadsEnabled)
-                              GestureDetector(
-                                onTap: _uploadingPicture ? null : _pickProfilePicture,
-                                child: Container(
-                                  width: 18, height: 18,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.dmAccent, shape: BoxShape.circle,
-                                    border: Border.all(color: AppColors.dmBubbleIn, width: 2),
+                              // Was an 18x18 tap target with no label at all --
+                              // the smallest in the app per this session's own
+                              // audit. Can't grow much past this without
+                              // overwhelming the 44px avatar it sits on, so
+                              // this is the practical ceiling for a corner
+                              // badge (WhatsApp/Instagram use the same scale),
+                              // paired with a Tooltip so it's no longer
+                              // unlabeled to screen readers.
+                              Tooltip(
+                                message: 'Change profile picture',
+                                child: GestureDetector(
+                                  onTap: _uploadingPicture ? null : _pickProfilePicture,
+                                  child: Container(
+                                    width: 32, height: 32,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.dmAccent, shape: BoxShape.circle,
+                                      border: Border.all(color: AppColors.dmBubbleIn, width: 2),
+                                    ),
+                                    child: _uploadingPicture
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(7),
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                          )
+                                        : const Icon(Icons.camera_alt, size: 15, color: Colors.white),
                                   ),
-                                  child: _uploadingPicture
-                                      ? const Padding(
-                                          padding: EdgeInsets.all(3),
-                                          child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white),
-                                        )
-                                      : const Icon(Icons.camera_alt, size: 10, color: Colors.white),
                                 ),
                               ),
                           ],
@@ -380,7 +392,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     ),
                   ],
                 ),
-                _SettingsCard(
+                SettingsStyleCard(
                   title: 'Appearance',
                   children: [
                     Consumer<ThemeProvider>(
@@ -396,7 +408,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     ),
                   ],
                 ),
-                _SettingsCard(
+                SettingsStyleCard(
                   title: 'Personalization mode',
                   children: categoryNames
                       .map(
@@ -412,7 +424,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       )
                       .toList(),
                 ),
-                _SettingsCard(
+                SettingsStyleCard(
                   // No title/subtitle here -- the parent switch below IS the
                   // header. Giving the card its own "Smart features" text on
                   // top of the switch's own title was the duplicate.
@@ -461,7 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     ),
                   ],
                 ),
-                _SettingsCard(
+                SettingsStyleCard(
                   title: 'Your categories',
                   subtitle: 'personal/office/study always exist -- add your own on top.',
                   children: [
@@ -473,6 +485,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                             Expanded(child: Text(c, style: const TextStyle(fontSize: 15))),
                             IconButton(
                               icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
+                              tooltip: 'Remove category',
                               onPressed: () => _removeCategory(c),
                             ),
                           ],
@@ -505,7 +518,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       ),
                   ],
                 ),
-                _SettingsCard(
+                SettingsStyleCard(
                   title: 'Your friend code',
                   subtitle: 'Share this so a friend can add you from the Friends tab.',
                   children: [
@@ -530,7 +543,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   ],
                 ),
                 if (_swiggyStatus?['enabled'] == true)
-                  _SettingsCard(
+                  SettingsStyleCard(
                     title: 'Swiggy',
                     subtitle: 'Connect your Swiggy account so the assistant can suggest real options and '
                         'order for you when you ask -- nothing is ever ordered without you confirming it first.',
@@ -562,7 +575,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                         ),
                     ],
                   ),
-                _SettingsCard(
+                SettingsStyleCard(
                   title: 'Experimental',
                   subtitle: 'A separate sandbox screen -- not linked into the real home '
                       'screen, safe to poke at.',
@@ -619,54 +632,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 const SizedBox(height: 12),
               ],
             ),
-      ),
-    );
-  }
-}
-
-class _SettingsCard extends StatelessWidget {
-  final String? title;
-  final String? subtitle;
-  final List<Widget> children;
-
-  const _SettingsCard({this.title, this.subtitle, required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppColors.dmBubbleIn,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.dmBubbleBorder),
-      ),
-      // Material ancestor required -- any ListTile/InkWell child (radio
-      // rows, the toggle switches, the "Home screen concept" row) paints
-      // its own background/ink via Ink, which is otherwise invisible (and
-      // throws a debug warning) inside a plain, non-Material Container.
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (title != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(title!, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.dmText)),
-                ),
-              if (subtitle != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(subtitle!, style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft)),
-                ),
-              ...children,
-            ],
-          ),
-        ),
       ),
     );
   }
