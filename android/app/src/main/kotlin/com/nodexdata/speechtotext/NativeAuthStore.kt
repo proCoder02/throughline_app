@@ -104,4 +104,37 @@ object NativeAuthStore {
             }
         }.start()
     }
+
+    /**
+     * Fire-and-forget POST <bodyJson> to <path>, same pattern and caveats as
+     * declineCall above. Used by HeartRateRelayListenerService to forward a
+     * heart-rate session the watch relayed over Bluetooth -- works even if
+     * this Flutter app isn't running, same as declineCall's own call site
+     * (CallConnection.onReject).
+     */
+    fun postJson(context: Context, path: String, bodyJson: String) {
+        Thread {
+            try {
+                val p = prefs(context)
+                val token = p.getString(KEY_TOKEN, null) ?: return@Thread
+                val baseUrl = p.getString(KEY_BASE_URL, null) ?: return@Thread
+                val url = URL("$baseUrl$path")
+                val connection = url.openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.doOutput = true
+                    connection.connectTimeout = 10_000
+                    connection.readTimeout = 10_000
+                    OutputStreamWriter(connection.outputStream).use { it.write(bodyJson) }
+                    connection.responseCode // forces the request to actually execute
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (e: Exception) {
+                // Best-effort -- see doc comment above.
+            }
+        }.start()
+    }
 }

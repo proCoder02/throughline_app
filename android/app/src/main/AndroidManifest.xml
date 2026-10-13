@@ -89,6 +89,21 @@
             </intent-filter>
         </service>
 
+        <!-- Receives heart-rate sessions the Wear OS companion app relays
+             over Bluetooth via the Data Layer when it has no network of
+             its own (see HeartRateRelayListenerService.kt). -->
+        <service
+            android:name=".HeartRateRelayListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED"/>
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/throughline/heart-rate-relay"/>
+            </intent-filter>
+        </service>
+
         <!-- Replaces the firebase_messaging plugin's own FCM receiver with
              MyFirebaseMessagingReceiver, which intercepts incoming_call/
              call_ended to drive the native Telecom UI above directly, then

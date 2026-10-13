@@ -76,4 +76,8 @@ dependencies {
     // conflict).
     implementation(platform("com.google.firebase:firebase-bom:33.16.0"))
     implementation("com.google.firebase:firebase-messaging")
+    // Wear OS Data Layer -- HeartRateRelayListenerService.kt receives heart-
+    // rate sessions the watch app relays over Bluetooth when it has no
+    // network of its own.
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
 }
