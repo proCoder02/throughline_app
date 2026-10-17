@@ -23,6 +23,7 @@ import '../../widgets/settings_style_card.dart';
 import '../../widgets/toggle_group.dart';
 import 'heart_rate_preview_screen.dart';
 import 'home_preview_screen.dart';
+import 'tv_activity_preview_screen.dart';
 import 'your_world_preview_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -627,6 +628,23 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                             const Icon(Icons.favorite_outline_rounded, size: 20, color: AppColors.dmAccent),
                             const SizedBox(width: 10),
                             const Expanded(child: Text('Watch heart rate (preview)', style: TextStyle(fontSize: 15))),
+                            Icon(Icons.chevron_right, size: 20, color: AppColors.dmTextSoft),
+                          ],
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const TvActivityPreviewScreen()),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.tv_outlined, size: 20, color: AppColors.dmAccent),
+                            const SizedBox(width: 10),
+                            const Expanded(child: Text('TV activity (preview)', style: TextStyle(fontSize: 15))),
                             Icon(Icons.chevron_right, size: 20, color: AppColors.dmTextSoft),
                           ],
                         ),

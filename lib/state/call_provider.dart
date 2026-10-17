@@ -76,6 +76,18 @@ class CallProvider extends ChangeNotifier {
     await _connect(info);
   }
 
+  /// For a call the global-chat assistant already started via its
+  /// make_call tool (see app.py's _tool_make_call) -- the call row and
+  /// LiveKit room already exist server-side, so this connects straight
+  /// from the join info the chat response carried instead of re-POSTing
+  /// /calls like startCall does.
+  Future<void> startFromActionCard(Map<String, dynamic> card) async {
+    _initiatorIdentity = authProvider.userId?.toString();
+    status = CallStatus.connecting;
+    notifyListeners();
+    await _connect(CallJoinInfo.fromJson(card));
+  }
+
   Future<void> joinCall(int callId, {required int callerId}) async {
     _initiatorIdentity = callerId.toString();
     status = CallStatus.connecting;

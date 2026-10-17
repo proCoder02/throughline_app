@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../models/chat_message.dart';
 import '../theme.dart';
 import 'action_card.dart';
+import 'call_action_card.dart';
+import 'email_draft_card.dart';
 import 'formatted_text.dart';
 import 'streaming_formatted_text.dart';
 
@@ -79,9 +81,17 @@ class MessageBubble extends StatelessWidget {
                     onDone: onStreamDone,
                   )
                 : FormattedText(message.content, style: TextStyle(color: AppColors.dmText)),
-            // Cognitive Commerce (Swiggy MCP) -- only present on an
-            // assistant reply that actually found real, orderable results.
-            if (message.actionCard != null) ActionCard(card: message.actionCard!),
+            // Cognitive Commerce (Swiggy MCP) card, or a make_call/
+            // send_email action card (see app.py's _tool_make_call/
+            // _tool_send_email) -- distinguished by 'type', which commerce
+            // cards never set (they key off 'server' and 'mode' instead,
+            // see swiggy_adapter.py).
+            if (message.actionCard != null)
+              switch (message.actionCard!['type']) {
+                'call' => CallActionCard(card: message.actionCard!),
+                'email_draft' => EmailDraftCard(card: message.actionCard!),
+                _ => ActionCard(card: message.actionCard!),
+              },
             const SizedBox(height: 2),
             Text(
               DateFormat.Hm().format(message.createdAt),
