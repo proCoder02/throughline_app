@@ -6,7 +6,9 @@ import '../theme.dart';
 import 'action_card.dart';
 import 'call_action_card.dart';
 import 'email_draft_card.dart';
+import 'expense_confirm_card.dart';
 import 'formatted_text.dart';
+import 'message_draft_card.dart';
 import 'streaming_formatted_text.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -81,17 +83,22 @@ class MessageBubble extends StatelessWidget {
                     onDone: onStreamDone,
                   )
                 : FormattedText(message.content, style: TextStyle(color: AppColors.dmText)),
-            // Cognitive Commerce (Swiggy MCP) card, or a make_call/
-            // send_email action card (see app.py's _tool_make_call/
-            // _tool_send_email) -- distinguished by 'type', which commerce
+            // Zero or more cards: a Cognitive Commerce (Swiggy MCP) card,
+            // and/or one per staged tool action (see app.py's
+            // run_agent_tool_loop) -- a single request can trigger several
+            // at once (e.g. log an expense AND draft a message about it),
+            // each rendered here, distinguished by 'type', which commerce
             // cards never set (they key off 'server' and 'mode' instead,
             // see swiggy_adapter.py).
-            if (message.actionCard != null)
-              switch (message.actionCard!['type']) {
-                'call' => CallActionCard(card: message.actionCard!),
-                'email_draft' => EmailDraftCard(card: message.actionCard!),
-                _ => ActionCard(card: message.actionCard!),
-              },
+            if (message.actionCards != null)
+              for (final card in message.actionCards!)
+                switch (card['type']) {
+                  'call' => CallActionCard(card: card),
+                  'email_draft' => EmailDraftCard(card: card),
+                  'expense_confirm' => ExpenseConfirmCard(card: card),
+                  'message_draft' => MessageDraftCard(card: card),
+                  _ => ActionCard(card: card),
+                },
             const SizedBox(height: 2),
             Text(
               DateFormat.Hm().format(message.createdAt),

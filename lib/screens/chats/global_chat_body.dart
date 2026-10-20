@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../../models/chat_message.dart';
 import '../../services/conversation_service.dart';
@@ -13,8 +16,12 @@ import '../../theme.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/dissolving_typing_indicator.dart';
 import '../../widgets/glowing_border.dart';
+import '../../widgets/live_timer_text.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/policy_confirm_sheet.dart';
+import '../../widgets/pulsing_halo.dart';
+import '../../widgets/transaction_confirm_sheet.dart';
 
 /// The actual persistent cross-session chat (§6) -- extracted out of
 /// GlobalChatScreen so the exact same real logic (load/send/image-attach/
@@ -43,7 +50,20 @@ class GlobalChatBody extends StatefulWidget {
   /// user has to manually re-type the summary into.
   final String? initialPrompt;
 
-  const GlobalChatBody({super.key, this.onBack, this.autoPickImage = false, this.initialPrompt});
+  /// A file shared into the app from another app's share sheet (e.g. a UPI
+  /// receipt screenshot from GPay/PhonePe/Paytm, see main.dart's
+  /// receive_sharing_intent listener) -- when set, skips the gallery
+  /// picker _pickImage normally opens and goes straight to the same
+  /// describe-then-send flow as a manually attached image.
+  final File? sharedImageFile;
+
+  const GlobalChatBody({
+    super.key,
+    this.onBack,
+    this.autoPickImage = false,
+    this.initialPrompt,
+    this.sharedImageFile,
+  });
 
   @override
   State<GlobalChatBody> createState() => GlobalChatBodyState();
@@ -56,12 +76,25 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
   final _promptFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final _picker = ImagePicker();
+  final _voiceRecorder = AudioRecorder();
+
+  // Voice input (§ mic button in the composer) -- records to a temp file,
+  // same record()/transcribe() shape as the watch app's CaptureScreen, then
+  // fills the composer for review rather than auto-sending: a misheard
+  // amount/name in a voice-driven action is exactly the kind of mistake
+  // that should be caught before it's sent, not after (see this session's
+  // own "confirm before anything consequential" discussion). Explicit
+  // Send afterward reuses _send() completely unchanged.
+  bool _isRecording = false;
+  bool _transcribing = false;
+  DateTime? _recordingStartedAt;
 
   // Drives the composer's GlowingBorder -- on while idle (a subtle "tap me"
   // signifier), off the moment the user actually engages with the field
   // (focuses it or has typed something), so it never distracts behind text
   // being entered.
-  bool get _composerActive => _promptFocusNode.hasFocus || _promptController.text.isNotEmpty;
+  bool get _composerActive =>
+      _promptFocusNode.hasFocus || _promptController.text.isNotEmpty || _isRecording || _transcribing;
 
   List<ChatMessage> _messages = [];
   bool _loading = true;
@@ -102,7 +135,9 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
     // adds while that fetch is still in flight.
     _load().then((_) {
       if (!mounted) return;
-      if (widget.autoPickImage) {
+      if (widget.sharedImageFile != null) {
+        _describeAndSendImage(widget.sharedImageFile!);
+      } else if (widget.autoPickImage) {
         _pickImage();
       } else if (widget.initialPrompt != null && widget.initialPrompt!.trim().isNotEmpty) {
         _sendInitialPrompt(widget.initialPrompt!.trim());
@@ -119,10 +154,180 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
     if (_hadExchange) {
       unawaited(_signalsService.wrapUpGlobalChat().catchError((_) {}));
     }
+    if (_isRecording) unawaited(_voiceRecorder.stop());
+    _voiceRecorder.dispose();
     _promptController.dispose();
     _promptFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    if (_isRecording || _transcribing) return;
+    try {
+      if (!await _voiceRecorder.hasPermission()) {
+        _showMessage('Microphone permission is needed for voice input.');
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/voice_input_${DateTime.now().microsecondsSinceEpoch}.m4a';
+      await _voiceRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, sampleRate: 16000, numChannels: 1),
+        path: path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _isRecording = true;
+        _recordingStartedAt = DateTime.now();
+      });
+    } catch (e) {
+      _showMessage('Could not start recording: $e');
+    }
+  }
+
+  Future<void> _stopRecordingAndTranscribe() async {
+    if (!_isRecording) return;
+    String? path;
+    try {
+      path = await _voiceRecorder.stop();
+    } catch (_) {
+      // Fall through to the null-path branch below, same as a failed start.
+    }
+    if (!mounted) return;
+    setState(() {
+      _isRecording = false;
+      _transcribing = path != null;
+    });
+    if (path == null) {
+      _showMessage('Recording did not produce any audio. Try again.');
+      return;
+    }
+
+    final file = File(path);
+    try {
+      final transcript = _stripSpeakerLabels(await _service.transcribe(file));
+      if (!mounted) return;
+      if (transcript.trim().isEmpty) {
+        _showMessage('Could not make out any speech in that recording.');
+        return;
+      }
+      // Sends immediately, same as typing + hitting send (Gemini/ChatGPT
+      // voice-mode style) -- any consequential action the message triggers
+      // gets its own confirm card (ExpenseConfirmCard/MessageDraftCard)
+      // before it actually does anything, so there's no need to hold the
+      // transcript back in the composer for a manual review first. Still
+      // combines with anything already typed, same as the old append
+      // behavior, so a voice note can extend a message in progress.
+      final existing = _promptController.text.trim();
+      final combined = existing.isEmpty ? transcript : '$existing $transcript';
+      _promptController.clear();
+      await _sendInitialPrompt(combined);
+    } catch (e) {
+      if (mounted) _showMessage('Could not transcribe that: $e');
+    } finally {
+      if (mounted) setState(() => _transcribing = false);
+      if (await file.exists()) await file.delete();
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  static final _speakerLinePrefix = RegExp(r'^\s*Speaker\s+\d+:\s*', caseSensitive: false);
+
+  /// /transcribe always returns the "Speaker N: text" convention (see
+  /// transcribe_audio_bytes in app.py) -- built for multi-person call/Listen
+  /// transcripts, where it's genuinely needed. Global chat's voice input is
+  /// always one person dictating a single message, so the label is pure
+  /// noise here, not information. Joins multiple lines (Deepgram splits on
+  /// pauses) back into one block of plain text rather than leaving
+  /// "Speaker 0: ..." stacked on separate lines in the composer.
+  String _stripSpeakerLabels(String transcript) {
+    return transcript
+        .split('\n')
+        .map((line) => line.replaceFirst(_speakerLinePrefix, '').trim())
+        .where((line) => line.isNotEmpty)
+        .join(' ');
+  }
+
+  /// Replaces the TextField in place while recording -- a pulsing red dot
+  /// (PulsingHalo, same widget the old Listen FAB used for this exact
+  /// "recording" signifier) + a live "0:07"-style counter (LiveTimerText,
+  /// same widget call_overlay.dart uses for call duration), not a second
+  /// bespoke recording UI.
+  Widget _buildRecordingIndicator() {
+    return Row(
+      children: [
+        PulsingHalo(
+          active: true,
+          color: AppColors.danger,
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: const BoxDecoration(color: AppColors.danger, shape: BoxShape.circle),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text('Listening…', style: TextStyle(color: AppColors.dmText, fontSize: 13)),
+        const Spacer(),
+        LiveTimerText(
+          startedAt: _recordingStartedAt!,
+          style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5),
+        ),
+      ],
+    );
+  }
+
+  /// One circle, same size/shape/padding throughout (Home's Ask bar's own
+  /// convention) -- only the icon/color/action inside it changes with
+  /// state, rather than swapping between visually different widgets, so
+  /// nothing jumps around as recording starts/stops/transcribes.
+  Widget _buildTrailingAction() {
+    if (_transcribing) {
+      return const Padding(
+        padding: EdgeInsets.all(9),
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.dmAccent),
+        ),
+      );
+    }
+    if (_isRecording) {
+      return Material(
+        color: AppColors.danger,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _stopRecordingAndTranscribe,
+          child: const Padding(
+            padding: EdgeInsets.all(9),
+            child: Icon(Icons.stop_rounded, color: Colors.white, size: 18),
+          ),
+        ),
+      );
+    }
+    final hasText = _promptController.text.trim().isNotEmpty;
+    return Material(
+      color: AppColors.dmAccent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _sending
+            ? null
+            : hasText
+                ? _send
+                : _startRecording,
+        child: Padding(
+          padding: const EdgeInsets.all(9),
+          child: Icon(hasText ? Icons.arrow_upward : Icons.mic_none_rounded, color: Colors.white, size: 18),
+        ),
+      ),
+    );
   }
 
   void _startReply(ChatMessage message) {
@@ -230,7 +435,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
     _scrollToEnd();
     try {
       final position = await _maybeGetLocation(backendText);
-      final (reply, actionCard) = await _service.sendGlobalChat(
+      final (reply, actionCards) = await _service.sendGlobalChat(
         backendText,
         lat: position?.latitude,
         lon: position?.longitude,
@@ -238,7 +443,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
       if (!mounted) return;
       _hadExchange = true;
       final assistantMessage =
-          ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now(), actionCard: actionCard);
+          ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now(), actionCards: actionCards);
       // Not appended to _messages yet -- see _pendingReply's doc comment.
       // The typing row's index must not move in this same setState, or the
       // dissolve never actually plays on it.
@@ -260,12 +465,162 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
     }
   }
 
+  /// "+" button entry point -- a photo (receipt, policy card, note) goes
+  /// through the existing vision pipeline; a PDF is offered separately
+  /// since it needs a different extraction path (text, not vision) with
+  /// no caption step -- but like a photo, a PDF can turn out to be a
+  /// receipt, a vehicle insurance policy, or neither; the backend decides
+  /// from its actual content, same as it does for a photo.
+  ///
+  /// Large icon tiles (WhatsApp/Telegram's attach-menu style) rather than
+  /// a plain text list -- the two options read at a glance instead of
+  /// needing to be read, and the tap target is the whole tile, not just
+  /// a thin row.
+  Future<void> _showAttachMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppColors.dmBubbleIn,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.dmBubbleBorder),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _AttachTile(
+                icon: Icons.photo_outlined,
+                label: 'Photo',
+                color: AppColors.dmAccent,
+                onTap: () => Navigator.of(sheetContext).pop('photo'),
+              ),
+              _AttachTile(
+                icon: Icons.picture_as_pdf_outlined,
+                label: 'PDF document',
+                color: Colors.redAccent,
+                onTap: () => Navigator.of(sheetContext).pop('pdf'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'photo') {
+      await _pickImage();
+    } else if (choice == 'pdf') {
+      await _pickPdf();
+    }
+  }
+
   Future<void> _pickImage() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
     if (picked == null || !mounted) return;
-    final description = await _showDescribeImageSheet(File(picked.path));
+    await _describeAndSendImage(File(picked.path));
+  }
+
+  Future<void> _pickPdf() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
+    final path = result?.files.single.path;
+    if (path == null || !mounted) return;
+    await _sendPdf(File(path));
+  }
+
+  /// Same chat-bubble + dissolve-in + confirm-sheet flow as _sendImage --
+  /// a PDF upload reads back a real overview in chat, and surfaces a
+  /// transaction or policy confirm sheet exactly like a photo would,
+  /// since the backend's extraction is the same for both upload forms.
+  Future<void> _sendPdf(File file) async {
+    setState(() {
+      _sending = true;
+      _messages = [
+        ..._messages,
+        ChatMessage(role: 'user', content: '[PDF document uploaded]', createdAt: DateTime.now()),
+      ];
+    });
+    _scrollToEnd();
+    try {
+      final (reply, conversationId, transaction, policy) = await _service.sendGlobalPdf(file);
+      if (!mounted) return;
+      final assistantMessage = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
+      setState(() {
+        _sending = false;
+        _typingDissolving = true;
+        _pendingReply = assistantMessage;
+      });
+      // A policy document can legitimately ALSO be a receipt for the
+      // premium paid (confirmed live: a real policy PDF's own "Gross
+      // Premium Paid" section extracted as a genuine transaction) -- both
+      // sheets are shown, one after another, rather than an if/else-if
+      // that would silently drop whichever one didn't go first. Same
+      // "don't let one surfaced outcome hide another" principle as the
+      // action_cards list fix for chat replies.
+      if (transaction != null) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        final confirmed = await showTransactionConfirmSheet(context, transaction);
+        if (confirmed != null) {
+          try {
+            final wasDuplicate = await _service.saveTransaction(conversationId, confirmed);
+            if (mounted && wasDuplicate) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Already saved -- looks like the same payment was shared again.')),
+              );
+            }
+          } catch (_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not save that transaction. Try again from the chat.')),
+              );
+            }
+          }
+        }
+      }
+      if (policy != null) {
+        await Future.delayed(Duration(milliseconds: transaction != null ? 150 : 300));
+        if (!mounted) return;
+        final confirmed = await showPolicyConfirmSheet(context, policy);
+        if (confirmed != null) {
+          try {
+            final replaced = await _service.saveVehiclePolicy(confirmed);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(replaced ? 'Policy updated.' : 'Policy saved.')),
+              );
+            }
+          } catch (_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not save that policy. Try again from the chat.')),
+              );
+            }
+          }
+        }
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _messages = [
+          ..._messages,
+          ChatMessage(role: 'assistant', content: 'Could not read that PDF.', createdAt: DateTime.now()),
+        ];
+        _sending = false;
+      });
+      _scrollToEnd();
+    }
+  }
+
+  /// Shared by _pickImage (gallery) and a file shared in from another app's
+  /// share sheet (widget.sharedImageFile) -- same describe-then-send flow
+  /// either way, the file just comes from a different source.
+  Future<void> _describeAndSendImage(File file) async {
+    final description = await _showDescribeImageSheet(file);
     if (description == null || !mounted) return;
-    _sendImage(File(picked.path), description);
+    _sendImage(file, description);
   }
 
   Future<String?> _showDescribeImageSheet(File file) {
@@ -340,7 +695,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
     });
     _scrollToEnd();
     try {
-      final reply = await _service.sendGlobalImage(file, description);
+      final (reply, conversationId, transaction, policy) = await _service.sendGlobalImage(file, description);
       if (!mounted) return;
       final assistantMessage = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
       setState(() {
@@ -348,6 +703,58 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
         _typingDissolving = true;
         _pendingReply = assistantMessage;
       });
+      // A policy document can legitimately ALSO be a receipt for the
+      // premium paid (confirmed live: a real policy PDF's own "Gross
+      // Premium Paid" section extracted as a genuine transaction) -- both
+      // sheets are shown, one after another, rather than an if/else-if
+      // that would silently drop whichever one didn't go first. Same
+      // "don't let one surfaced outcome hide another" principle as the
+      // action_cards list fix for chat replies.
+      if (transaction != null) {
+        // Fires after the reply's own dissolve-in has had a moment to
+        // start, rather than stacking a modal sheet on top of a message
+        // that hasn't appeared yet.
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        final confirmed = await showTransactionConfirmSheet(context, transaction);
+        if (confirmed != null) {
+          try {
+            final wasDuplicate = await _service.saveTransaction(conversationId, confirmed);
+            if (mounted && wasDuplicate) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Already saved -- looks like the same payment was shared again.')),
+              );
+            }
+          } catch (_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not save that transaction. Try again from the chat.')),
+              );
+            }
+          }
+        }
+      }
+      if (policy != null) {
+        await Future.delayed(Duration(milliseconds: transaction != null ? 150 : 300));
+        if (!mounted) return;
+        final confirmed = await showPolicyConfirmSheet(context, policy);
+        if (confirmed != null) {
+          try {
+            final replaced = await _service.saveVehiclePolicy(confirmed);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(replaced ? 'Policy updated.' : 'Policy saved.')),
+              );
+            }
+          } catch (_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not save that policy. Try again from the chat.')),
+              );
+            }
+          }
+        }
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -514,11 +921,11 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
                               // like a different affordance (a paperclip)
                               // once you're actually inside the chat.
                               icon: Icon(Icons.add, color: AppColors.dmTextSoft),
-                              tooltip: 'Attach an image',
-                              onPressed: _sending ? null : _pickImage,
+                              tooltip: 'Attach',
+                              onPressed: (_sending || _isRecording || _transcribing) ? null : _showAttachMenu,
                             ),
                             Expanded(
-                              child: TextField(
+                              child: _isRecording ? _buildRecordingIndicator() : TextField(
                                 controller: _promptController,
                                 focusNode: _promptFocusNode,
                                 // A bare TextField defaults to maxLines: 1,
@@ -562,20 +969,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
                                 onSubmitted: (_) => _send(),
                               ),
                             ),
-                            // Same circle -- icon, size, padding -- as
-                            // Home's Ask bar.
-                            Material(
-                              color: AppColors.dmAccent,
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: _sending ? null : _send,
-                                child: const Padding(
-                                  padding: EdgeInsets.all(9),
-                                  child: Icon(Icons.arrow_upward, color: Colors.white, size: 18),
-                                ),
-                              ),
-                            ),
+                            _buildTrailingAction(),
                           ],
                         ),
                       ),
@@ -587,6 +981,41 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A single large icon tile in _showAttachMenu's bottom sheet -- the whole
+/// tile (icon + label) is the tap target, not just the text.
+class _AttachTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AttachTile({required this.icon, required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
+              child: Icon(icon, color: color, size: 26),
+            ),
+            const SizedBox(height: 8),
+            Text(label, style: TextStyle(fontSize: 12.5, color: AppColors.dmText)),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -119,6 +119,36 @@ class CognitiveSuggestion {
       );
 }
 
+/// Someone in the user's extended network (a friend of one of their
+/// friends), not a direct friend themselves -- see GET /friends/search.
+/// Deliberately a separate class from Friend: nickname/lastCallAt/
+/// callCount only make sense for an actual direct friend, and overloading
+/// one model for both relationships would mean most of its fields are
+/// meaningless half the time depending on which kind of row it came from.
+class ExtendedFriend {
+  final int id;
+  final String username;
+  final String? profilePictureUrl;
+  // Which of the viewer's own friends connects them to this person --
+  // their nickname for that friend if one is set (matches Friend.displayName's
+  // own fallback), can list more than one name if several mutual friends apply.
+  final List<String> mutualVia;
+
+  ExtendedFriend({
+    required this.id,
+    required this.username,
+    this.profilePictureUrl,
+    required this.mutualVia,
+  });
+
+  factory ExtendedFriend.fromJson(Map<String, dynamic> json) => ExtendedFriend(
+        id: json['id'],
+        username: json['username'],
+        profilePictureUrl: json['profile_picture_url'] as String?,
+        mutualVia: (json['mutual_via'] as List? ?? []).cast<String>(),
+      );
+}
+
 /// A single compiled emoji for whichever 2-hour clock-aligned window has
 /// the most recent data -- not a raw per-conversation timeline. See
 /// FLUTTER_UPDATE_mood_emoji_and_fcm.md. moodLabel/emoji are both null if

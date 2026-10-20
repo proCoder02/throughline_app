@@ -10,8 +10,11 @@ android {
     namespace = "com.nodexdata.speechtotext"
     // Pinned above flutter.compileSdkVersion's default (34): file_picker's
     // transitive flutter_plugin_android_lifecycle dependency requires
-    // compiling against API 36+.
-    compileSdk = 36
+    // compiling against API 36+, and receive_sharing_intent (added for the
+    // share-sheet receipt flow) requires 37+ -- confirmed via a real build
+    // failure (checkReleaseAarMetadata) when this was still 36, not just
+    // the plugin's own advisory warning.
+    compileSdk = 37
     // Pinned above flutter.ndkVersion default: several plugins (livekit_client,
     // flutter_webrtc, firebase_*, etc.) require 28.2.13676358; NDK is backward
     // compatible so this satisfies all of them.
@@ -35,7 +38,7 @@ android {
         // in practice (Android 8.0, released 2017).
         minSdk = 26
         // Kept in step with compileSdk above (Android requires targetSdk <= compileSdk).
-        targetSdk = 36
+        targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

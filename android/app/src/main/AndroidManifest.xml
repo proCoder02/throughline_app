@@ -57,6 +57,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
+            <!-- Makes "Throughline" appear in the Android share sheet for a
+                 single shared image (e.g. a UPI payment screenshot from
+                 GPay/PhonePe/Paytm), received in Dart via
+                 receive_sharing_intent, see main.dart. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

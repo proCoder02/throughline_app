@@ -17,6 +17,14 @@ class FriendService {
 
   Future<void> add(String friendCode) => _api.dio.post('/friends/add', data: {'friend_code': friendCode});
 
+  /// Friends-of-friends matching [query] -- the discovery half of the
+  /// Friends screen's search box; the direct-friends half is a plain
+  /// client-side filter over list() above, no network call needed.
+  Future<List<ExtendedFriend>> searchExtendedNetwork(String query) async {
+    final r = await _api.dio.get('/friends/search', queryParameters: {'q': query});
+    return (r.data as List).map((j) => ExtendedFriend.fromJson(j)).toList();
+  }
+
   Future<CompiledMood> mood(int friendId) async {
     final r = await _api.dio.get('/friends/$friendId/mood');
     return CompiledMood.fromJson(r.data as Map<String, dynamic>);

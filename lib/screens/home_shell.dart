@@ -10,6 +10,7 @@ import '../services/api_client.dart';
 import '../services/conversation_service.dart';
 import '../services/friend_service.dart';
 import '../services/push_service.dart';
+import '../services/share_intent_service.dart';
 import '../state/notify_provider.dart';
 import '../state/theme_provider.dart';
 import '../theme.dart';
@@ -17,6 +18,7 @@ import '../widgets/call_overlay.dart';
 import '../widgets/island_nav_bar.dart';
 import 'chats/chat_thread_screen.dart';
 import 'chats/chats_screen.dart';
+import 'chats/global_chat_screen.dart';
 import 'home/home_screen.dart';
 import 'insights/digest_screen.dart';
 import 'tasks/tasks_screen.dart';
@@ -153,6 +155,24 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // Cold-start counterpart to onDigestReadyTapped above.
     final pendingDigestOpen = await consumePendingDigestOpen();
     if (pendingDigestOpen) _openDigestFromPush();
+
+    // Cold-start counterpart to main.dart's ShareIntentService.instance.init
+    // (which only ever covers an already-running engine) -- the share sheet
+    // LAUNCHED Throughline, so there was no Navigator/auth state to push
+    // into at the moment the share actually arrived. Safe to act on
+    // immediately here: this widget only ever mounts once auth has already
+    // resolved to authenticated. See share_intent_service.dart's own doc
+    // comment for the race this replaces (confirmed live: without this,
+    // the share sheet opened the app to a bare Home screen and the receipt
+    // was never attached).
+    final pendingSharedImage = await ShareIntentService.instance.consumePendingSharedImage();
+    if (pendingSharedImage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => GlobalChatScreen(sharedImageFile: pendingSharedImage)),
+        );
+      });
+    }
 
     // Connect the app-wide notify socket once, for as long as the user stays
     // in the authenticated area (this widget persists across tab switches).

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +17,12 @@ import 'global_chat_body.dart';
 /// own "Chat"/"Add" quick actions embed GlobalChatBody directly instead of
 /// pushing this -- see home_screen.dart's own note on why.
 class GlobalChatScreen extends StatefulWidget {
-  const GlobalChatScreen({super.key});
+  /// Set when this screen is pushed in response to a share-sheet image
+  /// (see main.dart's ShareIntentService wiring) -- passed straight
+  /// through to GlobalChatBody.
+  final File? sharedImageFile;
+
+  const GlobalChatScreen({super.key, this.sharedImageFile});
 
   @override
   State<GlobalChatScreen> createState() => _GlobalChatScreenState();
@@ -52,7 +59,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
             ],
           ),
         ),
-        body: const GlobalChatBody(),
+        body: GlobalChatBody(sharedImageFile: widget.sharedImageFile),
       ),
     );
   }

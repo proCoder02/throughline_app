@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import '../../utils/call_format.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/extended_profile_sheet.dart';
 import '../../widgets/offline_banner.dart';
 import 'direct_message_screen.dart';
 import 'friend_profile_screen.dart';
@@ -32,6 +34,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   final _service = FriendService();
   final _messageService = MessageService();
   final _codeController = TextEditingController();
+  final _searchController = TextEditingController();
   List<Friend>? _friends;
   bool _loading = true;
   Object? _loadError;
@@ -40,6 +43,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
   String? _error;
   bool _pickingCall = false;
   final Set<int> _callSelection = {};
+
+  // Direct-friend matches are a plain client-side filter (the full list is
+  // already loaded) -- only the friends-of-friends half needs a network
+  // call, debounced so fast typing doesn't fire one request per keystroke.
+  String _search = '';
+  Timer? _searchDebounce;
+  List<ExtendedFriend> _extendedResults = [];
+  bool _searchingExtended = false;
 
   @override
   void initState() {
@@ -54,6 +65,42 @@ class _FriendsScreenState extends State<FriendsScreen> {
     }
     _load();
     _loadUnreadMessageCounts();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _codeController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _search = value.trim().toLowerCase());
+    _searchDebounce?.cancel();
+    if (_search.isEmpty) {
+      setState(() => _extendedResults = []);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () => _searchExtendedNetwork(_search));
+  }
+
+  Future<void> _searchExtendedNetwork(String query) async {
+    setState(() => _searchingExtended = true);
+    try {
+      final results = await _service.searchExtendedNetwork(query);
+      // The query may have changed again while this was in flight (fast
+      // typing outrunning the debounce's own network round trip) -- drop a
+      // stale response rather than overwrite newer, still-loading results.
+      if (!mounted || _search != query) return;
+      setState(() {
+        _extendedResults = results;
+        _searchingExtended = false;
+      });
+    } catch (_) {
+      if (!mounted || _search != query) return;
+      setState(() => _searchingExtended = false);
+    }
   }
 
   Future<void> _loadUnreadMessageCounts() async {
@@ -240,6 +287,46 @@ class _FriendsScreenState extends State<FriendsScreen> {
                         child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 13)),
                       ),
                     ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: TextField(
+                        controller: _searchController,
+                        style: TextStyle(color: AppColors.dmText),
+                        cursorColor: AppColors.dmAccent,
+                        decoration: InputDecoration(
+                          hintText: 'Search your friends and their friends',
+                          hintStyle: TextStyle(color: AppColors.dmTextSoft),
+                          prefixIcon: Icon(Icons.search, color: AppColors.dmTextSoft),
+                          suffixIcon: _search.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: Icon(Icons.close, color: AppColors.dmTextSoft),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _onSearchChanged('');
+                                  },
+                                ),
+                          isDense: true,
+                          filled: true,
+                          fillColor: AppColors.dmPillFill,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                          enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide(color: AppColors.dmBubbleBorder)),
+                          focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: const BorderSide(color: AppColors.dmAccent, width: 2)),
+                        ),
+                        onChanged: _onSearchChanged,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             )
@@ -296,6 +383,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
         subtitle: 'Add a friend using their friend code from Settings.',
       );
     }
+    if (_search.isNotEmpty && !_pickingCall) {
+      return _buildSearchResults(friends, directMessageBadges);
+    }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: friends.length,
@@ -344,6 +434,58 @@ class _FriendsScreenState extends State<FriendsScreen> {
           onCall: () => _startCall([f.id]),
         );
       },
+    );
+  }
+
+  /// Two sections while searching: direct-friend matches (a plain client-
+  /// side filter over the already-loaded list, same _FriendRow as the
+  /// normal list), then -- below a header, only if any exist -- people in
+  /// the extended network (friends of friends) matching the same query,
+  /// fetched via _searchExtendedNetwork's debounced call. A small ListView
+  /// (not .builder) is fine here: search results are a short, filtered
+  /// subset, not the full 100+-friend list the normal path optimizes for.
+  Widget _buildSearchResults(List<Friend> friends, Map<int, int> directMessageBadges) {
+    final matches = friends
+        .where((f) => f.displayName.toLowerCase().contains(_search) || f.username.toLowerCase().contains(_search))
+        .toList();
+
+    if (matches.isEmpty && _extendedResults.isEmpty && !_searchingExtended) {
+      return EmptyState(
+        icon: Icons.search_off,
+        title: 'No one found',
+        subtitle: 'No friends or friends-of-friends match "$_search".',
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      children: [
+        for (final f in matches)
+          _FriendRow(
+            friend: f,
+            unreadMessages: directMessageBadges[f.id] ?? 0,
+            onTap: () => _openFriend(f),
+            onChat: () => _openChat(f),
+            onCall: () => _startCall([f.id]),
+          ),
+        if (_searchingExtended)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (_extendedResults.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+            child: Text(
+              'IN YOUR NETWORK',
+              style: TextStyle(
+                  fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: AppColors.dmTextSoft),
+            ),
+          ),
+          for (final ef in _extendedResults)
+            _ExtendedFriendRow(friend: ef, onTap: () => showExtendedProfileSheet(context, ef)),
+        ],
+      ],
     );
   }
 }
@@ -429,6 +571,66 @@ class _FriendRow extends StatelessWidget {
                 _ChatButton(onPressed: onChat, unreadCount: unreadMessages),
                 const SizedBox(width: 8),
                 _CallButton(onPressed: onCall),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A friends-of-friends search result -- same card shape as _FriendRow for
+/// visual consistency, but no chat/call actions (not a direct friend) and
+/// a "via {mutual friend}" subtitle instead of a call-history one. Tapping
+/// opens the read-only extended-profile sheet, never a chat/call screen.
+class _ExtendedFriendRow extends StatelessWidget {
+  final ExtendedFriend friend;
+  final VoidCallback onTap;
+
+  const _ExtendedFriendRow({required this.friend, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder.withValues(alpha: 0.6), style: BorderStyle.solid),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                InitialAvatar(name: friend.username, imageUrl: friend.profilePictureUrl),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        friend.username,
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.dmText),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        friend.mutualVia.isEmpty ? 'In your network' : 'via ${friend.mutualVia.join(', ')}',
+                        style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: AppColors.dmTextSoft),
               ],
             ),
           ),

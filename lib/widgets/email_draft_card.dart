@@ -1,7 +1,12 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../services/email_draft_service.dart';
+import '../services/upload_service.dart';
 import '../theme.dart';
+import '../utils/mime_type.dart';
 
 /// The "review before sending" card a global-chat reply carries as
 /// ChatMessage.actionCard when send_email's recipient isn't a known friend
@@ -23,22 +28,76 @@ enum _DraftState { pending, busy, sent, dismissed, error }
 
 class _EmailDraftCardState extends State<EmailDraftCard> {
   final _service = EmailDraftService();
+  final _uploadService = UploadService();
   late _DraftState _state;
   String? _errorText;
+  bool _attaching = false;
 
   @override
   void initState() {
     super.initState();
-    _state = _DraftState.pending;
+    // widget.card is the SAME Map instance held in GlobalChatBodyState's
+    // _messages list, which survives ListView.builder disposing/rebuilding
+    // this widget on scroll -- so a resolution recorded into it directly
+    // (see _send/_cancel/_attach/_removeAttachment below) is still there
+    // when this State is recreated fresh, instead of always resetting.
+    _state = switch (widget.card['_resolvedStatus']) {
+      'sent' => _DraftState.sent,
+      'dismissed' => _DraftState.dismissed,
+      _ => _DraftState.pending,
+    };
   }
 
   int get _draftId => widget.card['draft_id'] as int;
+
+  List<Map<String, dynamic>> get _attachments =>
+      ((widget.card['_attachments'] as List?) ?? const []).cast<Map<String, dynamic>>();
+
+  Future<void> _attach() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    final path = result?.files.single.path;
+    if (path == null || !mounted) return;
+    setState(() => _attaching = true);
+    try {
+      final file = File(path);
+      final contentType = guessMimeType(path);
+      final objectKey = await _uploadService.uploadFile(file, 'chat_file', contentType);
+      await _uploadService.confirmUpload(objectKey, 'chat_file');
+      final filename = path.split(Platform.pathSeparator).last;
+      final attachments = await _service.attachFile(_draftId, objectKey, filename, contentType);
+      if (!mounted) return;
+      widget.card['_attachments'] = attachments;
+      setState(() => _attaching = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _attaching = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not attach that file. Try again.')),
+      );
+    }
+  }
+
+  Future<void> _removeAttachment(int attachmentId) async {
+    setState(() => _attaching = true);
+    try {
+      final attachments = await _service.removeAttachment(_draftId, attachmentId);
+      if (!mounted) return;
+      widget.card['_attachments'] = attachments;
+    } catch (_) {
+      // Leaving the chip in place on failure is fine -- the user can
+      // just try removing it again, same as every other best-effort
+      // action in this card.
+    }
+    if (!mounted) return;
+    setState(() => _attaching = false);
+  }
 
   Future<void> _send() async {
     setState(() => _state = _DraftState.busy);
     try {
       await _service.confirm(_draftId);
       if (!mounted) return;
+      widget.card['_resolvedStatus'] = 'sent';
       setState(() => _state = _DraftState.sent);
     } catch (e) {
       if (!mounted) return;
@@ -58,6 +117,7 @@ class _EmailDraftCardState extends State<EmailDraftCard> {
       // pending server-side; it can never accidentally send either way.
     }
     if (!mounted) return;
+    widget.card['_resolvedStatus'] = 'dismissed';
     setState(() => _state = _DraftState.dismissed);
   }
 
@@ -97,7 +157,8 @@ class _EmailDraftCardState extends State<EmailDraftCard> {
     final toEmail = widget.card['to_email'] as String? ?? '';
     final subject = widget.card['subject'] as String? ?? '';
     final body = widget.card['body'] as String? ?? '';
-    final busy = _state == _DraftState.busy;
+    final busy = _state == _DraftState.busy || _attaching;
+    final attachments = _attachments;
 
     return _card(children: [
       Row(children: [
@@ -109,7 +170,35 @@ class _EmailDraftCardState extends State<EmailDraftCard> {
       Text(subject, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
       const SizedBox(height: 4),
       Text(body, style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft), maxLines: 6, overflow: TextOverflow.ellipsis),
-      const SizedBox(height: 10),
+      if (attachments.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: attachments.map((a) {
+            return Chip(
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              avatar: const Icon(Icons.attach_file, size: 14),
+              label: Text(a['filename'] as String? ?? 'file', style: const TextStyle(fontSize: 11.5)),
+              onDeleted: busy ? null : () => _removeAttachment(a['id'] as int),
+              deleteIcon: const Icon(Icons.close, size: 14),
+            );
+          }).toList(),
+        ),
+      ],
+      const SizedBox(height: 6),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: busy ? null : _attach,
+          icon: _attaching
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.attach_file, size: 15),
+          label: Text(_attaching ? 'Attaching...' : 'Attach file'),
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), visualDensity: VisualDensity.compact),
+        ),
+      ),
+      const SizedBox(height: 6),
       Row(
         children: [
           Expanded(

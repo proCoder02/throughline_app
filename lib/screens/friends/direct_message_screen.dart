@@ -23,25 +23,9 @@ import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_slide_in.dart';
 import '../../widgets/offline_banner.dart';
+import '../../utils/mime_type.dart';
 import '../../widgets/photo_viewer.dart';
 import '../../widgets/tap_bounce.dart';
-
-/// Best-effort file-extension -> MIME type -- good enough for R2's content
-/// type and for this screen's own image/video/file branching; a wrong
-/// guess for an obscure document extension only affects how a browser
-/// treats the download, never whether the upload/send itself works (the
-/// backend's chat_file purpose accepts any content type -- see storage.py).
-String _guessMimeType(String path) {
-  final ext = path.split('.').last.toLowerCase();
-  const map = {
-    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif',
-    'mp4': 'video/mp4', 'mov': 'video/quicktime', 'webm': 'video/webm',
-    'pdf': 'application/pdf', 'doc': 'application/msword',
-    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'txt': 'text/plain', 'zip': 'application/zip',
-  };
-  return map[ext] ?? 'application/octet-stream';
-}
 
 /// Real-time 1:1 text chat with a friend -- distinct from ChatThreadScreen
 /// (which is a solo Listen conversation's LLM Q&A). Cache-first load (same
@@ -373,18 +357,18 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
       final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 90);
       if (picked == null) return;
       file = File(picked.path);
-      mimeType = _guessMimeType(picked.path);
+      mimeType = guessMimeType(picked.path);
     } else if (kind == 'video') {
       final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
       if (picked == null) return;
       file = File(picked.path);
-      mimeType = _guessMimeType(picked.path);
+      mimeType = guessMimeType(picked.path);
     } else {
       final result = await FilePicker.platform.pickFiles(type: FileType.any);
       final path = result?.files.single.path;
       if (path == null) return;
       file = File(path);
-      mimeType = _guessMimeType(path);
+      mimeType = guessMimeType(path);
     }
     if (!mounted) return;
 

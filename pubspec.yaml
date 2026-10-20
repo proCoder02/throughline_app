@@ -36,6 +36,10 @@ dependencies:
   # conflicts with flutter_plugin_android_lifecycle's compileSdk 36 requirement.
   file_picker: ^10.3.3
   flutter_animate: ^4.5.2
+  # Receives a shared image from another app (GPay/PhonePe/Paytm, Gallery,
+  # etc.) via the Android share sheet -- see AndroidManifest.xml's SEND
+  # intent-filter and main.dart's listener.
+  receive_sharing_intent: ^1.8.1
   # Not used by anything yet -- added so a specific Lottie JSON asset (e.g.
   # a Gemini-style animation) can be dropped in and wired up later without
   # a separate dependency-add step. No asset ships with the app today.

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'services/api_client.dart';
 import 'services/local_cache.dart';
 import 'services/push_service.dart';
+import 'services/share_intent_service.dart';
 import 'state/auth_provider.dart';
 import 'state/call_provider.dart';
 import 'state/listen_provider.dart';
@@ -12,6 +13,7 @@ import 'state/notify_provider.dart';
 import 'state/theme_provider.dart';
 import 'theme.dart';
 import 'screens/auth_screen.dart';
+import 'screens/chats/global_chat_screen.dart';
 import 'screens/persona_gate.dart';
 
 final authProvider = AuthProvider();
@@ -54,6 +56,22 @@ void main() async {
   // frame. No-ops safely if firebase_options.dart is still a placeholder --
   // see PushService.init()/registerDevice(), which awaits this internally.
   PushService.instance.init();
+
+  // A UPI receipt (or any image) shared in from another app's share sheet
+  // WHILE THROUGHLINE IS ALREADY RUNNING -- same navigatorKey.currentState?.push
+  // pattern PushService's own notification-tap handling already uses (see
+  // home_shell.dart). The cold-start case (share sheet LAUNCHES Throughline)
+  // is deliberately NOT handled here -- see ShareIntentService's own doc
+  // comment for the race this would hit, and home_shell.dart's _bootstrap()
+  // for where that case is actually handled.
+  ShareIntentService.instance.init((image) {
+    if (!authProvider.isAuthenticated) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => GlobalChatScreen(sharedImageFile: image)),
+      );
+    });
+  });
 }
 
 class ThroughlineApp extends StatelessWidget {
