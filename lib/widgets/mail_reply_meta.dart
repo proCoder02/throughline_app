@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/chat_message.dart';
-import '../services/outlook_service.dart';
+import '../services/mail_service.dart';
 import '../theme.dart';
 
 /// Shown under a global-chat reply that used the Outlook tools: what the
@@ -25,9 +25,9 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
 
   List<Map> _list(String key) => ((widget.meta[key] as List?) ?? const []).whereType<Map>().toList();
 
-  Future<void> _reconnect() async {
+  Future<void> _reconnect(MailProvider provider) async {
     try {
-      await OutlookService().connect();
+      await MailService(provider).connect();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not start Outlook sign-in: $e')));
@@ -49,7 +49,8 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final a in activity) _ActivityLine(activity: a, onReconnect: _reconnect),
+          for (final a in activity)
+            _ActivityLine(activity: a, onReconnect: () => _reconnect(MailProvider.of(a['provider']))),
           if (sources.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(top: 6, bottom: 4),
@@ -137,14 +138,15 @@ class _SourceTile extends StatelessWidget {
 
   Future<void> _open(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final result = await OutlookStatus.openEmail(source['web_link'] as String?);
+    final provider = MailProvider.of(source['provider']);
+    final result = await MailStatus.openEmail(provider, source['web_link'] as String?);
     final subject = '${source['subject'] ?? ''}';
     switch (result) {
       case OpenedEmail.appInbox:
-        // Outlook opened, but on its inbox -- say which email to look for.
+        // The app opened, but on its inbox -- say which email to look for.
         messenger.showSnackBar(SnackBar(
           duration: const Duration(seconds: 6),
-          content: Text('Opened Outlook -- look for “${subject.isEmpty ? '(no subject)' : subject}” '
+          content: Text('Opened ${provider.label} -- look for “${subject.isEmpty ? '(no subject)' : subject}” '
               'from ${_senderName(source['from'] as String?)}.'),
         ));
       case OpenedEmail.failed:
@@ -166,12 +168,12 @@ class _SourceTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          // Always tappable: even without a webLink, the Outlook app itself
-          // can still be opened (see OutlookStatus.openEmail).
+          // Always tappable: even without a web link, the mail app itself
+          // can still be opened (see MailStatus.openEmail).
           onTap: () => _open(context),
           child: Semantics(
             button: true,
-            label: '${_senderName(source['from'] as String?)}, $subject, opens in Outlook',
+            label: '${_senderName(source['from'] as String?)}, $subject, opens in ${MailProvider.of(source['provider']).label}',
             excludeSemantics: true,
             child: Container(
               // 48dp-ish row height -- a comfortable thumb target.
@@ -261,10 +263,10 @@ class MailSuggestions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Map<String, dynamic>?>(
-      valueListenable: OutlookStatus.notifier,
-      builder: (context, status, _) {
-        if (!OutlookStatus.ready(status)) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: MailStatus.any,
+      builder: (context, _) {
+        if (!MailStatus.anyReady()) return const SizedBox.shrink();
         final children = <Widget>[
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -274,7 +276,7 @@ class MailSuggestions extends StatelessWidget {
               Text('Try with your inbox:', style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12)),
             ],
           ),
-          for (final p in OutlookStatus.examplePrompts)
+          for (final p in MailStatus.examplePrompts)
             ActionChip(
               label: Text(p, style: TextStyle(fontSize: 12, color: AppColors.dmText)),
               backgroundColor: AppColors.dmBubbleIn,

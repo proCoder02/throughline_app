@@ -12,7 +12,7 @@ import 'package:record/record.dart';
 import '../../models/chat_message.dart';
 import '../../services/conversation_service.dart';
 import '../../services/home_signals_service.dart';
-import '../../services/outlook_service.dart';
+import '../../services/mail_service.dart';
 import '../../theme.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/dissolving_typing_indicator.dart';
@@ -127,16 +127,16 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
   ChatMessage? _streamingMessage;
 
   // The text of the in-flight message, so the typing row can say "Checking
-  // your inbox…" for a mail question (see OutlookStatus.pendingLabel).
+  // your inbox…" for a mail question (see MailStatus.pendingLabel).
   // Empty for image/PDF sends, which never touch mail.
   String _pendingText = '';
 
   @override
   void initState() {
     super.initState();
-    // Outlook status gates the mail suggestion chips and waiting label --
+    // Mailbox status gates the mail suggestion chips and waiting label --
     // cached app-wide, so this is a no-op after the first screen loads it.
-    unawaited(OutlookStatus.ensureLoaded());
+    unawaited(MailStatus.ensureLoaded());
     _promptController.addListener(_onComposerActivityChanged);
     _promptFocusNode.addListener(_onComposerActivityChanged);
     // Both auto-behaviors wait for _load() to finish first -- otherwise the
@@ -457,7 +457,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
           role: 'assistant', content: reply, createdAt: DateTime.now(), actionCards: actionCards, replyMeta: replyMeta);
       // A reply that couldn't reach the mailbox means the saved Microsoft
       // sign-in just went stale -- refresh so Settings/chips reflect it.
-      if (replyMeta != null) unawaited(OutlookStatus.refresh());
+      if (replyMeta != null) unawaited(MailStatus.refresh());
       // Not appended to _messages yet -- see _pendingReply's doc comment.
       // The typing row's index must not move in this same setState, or the
       // dissolve never actually plays on it.
@@ -844,7 +844,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
                       itemBuilder: (context, i) {
                         if (i == _messages.length) {
                           return DissolvingTypingIndicator(
-                            label: OutlookStatus.pendingLabel(_pendingText),
+                            label: MailStatus.pendingLabel(_pendingText),
                             disappear: _typingDissolving,
                             onDissolved: () {
                               if (!mounted) return;

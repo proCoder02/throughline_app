@@ -152,10 +152,11 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
-        <!-- Outlook mail sources (OutlookStatus.openEmail): lets the app see
-             and open the Outlook app itself instead of always falling back
-             to Outlook on the web in a browser. -->
+        <!-- Mail sources (MailStatus.openEmail): lets the app see and open
+             the Outlook / Gmail apps instead of always falling back to the
+             web versions in a browser. -->
         <package android:name="com.microsoft.office.outlook"/>
+        <package android:name="com.google.android.gm"/>
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="ms-outlook"/>
