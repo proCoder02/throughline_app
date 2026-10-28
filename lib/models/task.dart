@@ -10,6 +10,10 @@ class Task {
   final String status; // "open" | "done"
   final DateTime createdAt;
   final String category;
+  // Set when the assistant created this task from an email in chat ("remind
+  // me to pay this bill"): {provider, account, id, from, subject, received,
+  // web_link} -- shown as a tappable "From email" line. Null otherwise.
+  final Map<String, dynamic>? sourceEmail;
 
   Task({
     required this.id,
@@ -23,6 +27,7 @@ class Task {
     required this.status,
     required this.createdAt,
     required this.category,
+    this.sourceEmail,
   });
 
   bool get isDone => status == 'done';
@@ -39,6 +44,7 @@ class Task {
         status: json['status'],
         createdAt: DateTime.parse(json['created_at']).toLocal(),
         category: json['category'] ?? 'personal',
+        sourceEmail: json['source_email'] is Map ? Map<String, dynamic>.from(json['source_email'] as Map) : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -53,5 +59,6 @@ class Task {
         'status': status,
         'created_at': createdAt.toUtc().toIso8601String(),
         'category': category,
+        if (sourceEmail != null) 'source_email': sourceEmail,
       };
 }

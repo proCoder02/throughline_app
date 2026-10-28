@@ -247,6 +247,57 @@ class _SourceTile extends StatelessWidget {
   }
 }
 
+/// "From email: <subject> · <sender>" on a task or expense the assistant
+/// created from an email (task.sourceEmail / card['source_email']). Tapping
+/// opens that email the same way a source tile does -- the provider's app
+/// when it can (see MailStatus.openEmail).
+class EmailSourceLine extends StatelessWidget {
+  final Map source;
+  const EmailSourceLine({super.key, required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final subject = '${source['subject'] ?? ''}'.isEmpty ? '(no subject)' : '${source['subject']}';
+    final who = _SourceTile._senderName(source['from'] as String?);
+    final provider = MailProvider.of(source['provider']);
+    return Semantics(
+      button: true,
+      label: 'From email: $subject, from $who, opens in ${provider.label}',
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () async {
+          final messenger = ScaffoldMessenger.of(context);
+          final result = await MailStatus.openEmail(provider, source['web_link'] as String?);
+          if (result == OpenedEmail.appInbox) {
+            messenger.showSnackBar(SnackBar(content: Text('Opened ${provider.label} -- look for “$subject” from $who.')));
+          } else if (result == OpenedEmail.failed) {
+            messenger.showSnackBar(const SnackBar(content: Text("Couldn't open that email.")));
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.mail_outline_rounded, size: 14, color: AppColors.dmAccent),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  'From email: $subject${who.isNotEmpty ? ' · $who' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.dmAccent),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "Try with your inbox" chips for the global chat -- only once Outlook is
 /// connected and usable, so nobody is offered something that can't work.
 class MailSuggestions extends StatelessWidget {

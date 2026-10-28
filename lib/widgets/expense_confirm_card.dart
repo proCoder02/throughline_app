@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/transaction.dart';
 import '../services/conversation_service.dart';
 import '../theme.dart';
+import 'mail_reply_meta.dart';
 import 'transaction_confirm_sheet.dart';
 
 /// The "review before saving" card a global-chat reply carries as
@@ -133,6 +134,10 @@ class _ExpenseConfirmCardState extends State<ExpenseConfirmCard> {
       if (subtitleParts.isNotEmpty) ...[
         const SizedBox(height: 4),
         Text(subtitleParts.join(' '), style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft)),
+      ],
+      if (widget.card['source_email'] is Map) ...[
+        const SizedBox(height: 4),
+        EmailSourceLine(source: widget.card['source_email'] as Map),
       ],
       const SizedBox(height: 10),
       Row(

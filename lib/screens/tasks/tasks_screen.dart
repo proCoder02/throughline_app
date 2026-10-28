@@ -15,6 +15,7 @@ import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/fade_collapse.dart';
 import '../../widgets/fade_slide_in.dart';
+import '../../widgets/mail_reply_meta.dart';
 import '../../widgets/offline_banner.dart';
 import '../chats/chat_thread_screen.dart';
 
@@ -489,6 +490,7 @@ class _TaskRowState extends State<_TaskRow> {
                         const SizedBox(height: 3),
                         Text(details, style: TextStyle(fontSize: 13.5, color: AppColors.dmTextSoft)),
                       ],
+                      if (task.sourceEmail != null) EmailSourceLine(source: task.sourceEmail!),
                     ],
                   ),
                 ),
