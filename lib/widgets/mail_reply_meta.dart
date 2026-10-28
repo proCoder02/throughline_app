@@ -95,7 +95,14 @@ class _ActivityLine extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(isError ? Icons.warning_amber_rounded : Icons.mail_outline_rounded, size: 15, color: color),
+          Icon(
+              isError
+                  ? Icons.warning_amber_rounded
+                  : activity['icon'] == 'spending'
+                      ? Icons.bar_chart_rounded
+                      : Icons.mail_outline_rounded,
+              size: 15,
+              color: color),
           const SizedBox(width: 6),
           Expanded(
             child: Text('${activity['label'] ?? ''}', style: TextStyle(color: color, fontSize: 12.5, height: 1.35)),
@@ -319,7 +326,15 @@ class MailSuggestions extends StatelessWidget {
 
   /// True once the thread already has a reply that used mail -- the user
   /// has discovered the feature, so the chips can step aside.
-  static bool hasMailReply(Iterable<ChatMessage> messages) => messages.any((m) => m.replyMeta != null);
+  static bool hasMailReply(Iterable<ChatMessage> messages) => messages.any((m) {
+        final meta = m.replyMeta;
+        if (meta == null) return false;
+        // A spending-only answer (query_spending) carries reply_meta too, but no mail.
+        final sources = meta['mail_sources'];
+        final activity = meta['tool_activity'];
+        return (sources is List && sources.isNotEmpty) ||
+            (activity is List && activity.any((a) => a is Map && a['provider'] != null));
+      });
 
   @override
   Widget build(BuildContext context) {
