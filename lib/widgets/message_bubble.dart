@@ -8,6 +8,7 @@ import 'call_action_card.dart';
 import 'email_draft_card.dart';
 import 'expense_confirm_card.dart';
 import 'formatted_text.dart';
+import 'mail_reply_meta.dart';
 import 'message_draft_card.dart';
 import 'streaming_formatted_text.dart';
 
@@ -83,6 +84,8 @@ class MessageBubble extends StatelessWidget {
                     onDone: onStreamDone,
                   )
                 : FormattedText(message.content, style: TextStyle(color: AppColors.dmText)),
+            // Outlook: which tools ran + the emails this reply drew on.
+            if (message.replyMeta != null) MailReplyMeta(meta: message.replyMeta!),
             // Zero or more cards: a Cognitive Commerce (Swiggy MCP) card,
             // and/or one per staged tool action (see app.py's
             // run_agent_tool_loop) -- a single request can trigger several

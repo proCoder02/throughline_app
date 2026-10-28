@@ -7,7 +7,11 @@ import '../theme.dart';
 /// itself (the reply appearing IS the "read receipt") rather than only a
 /// spinner on the send button that disappears into nothing.
 class TypingIndicator extends StatefulWidget {
-  const TypingIndicator({super.key});
+  /// Optional words next to the dots -- e.g. "Checking your inbox…" while a
+  /// mail question is answered, so a longer wait reads as real work.
+  final String? label;
+
+  const TypingIndicator({super.key, this.label});
 
   @override
   State<TypingIndicator> createState() => _TypingIndicatorState();
@@ -58,6 +62,10 @@ class _TypingIndicatorState extends State<TypingIndicator> with SingleTickerProv
             _dot(0.15),
             const SizedBox(width: 4),
             _dot(0.3),
+            if (widget.label != null) ...[
+              const SizedBox(width: 10),
+              Text(widget.label!, style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5)),
+            ],
           ],
         ),
       ),

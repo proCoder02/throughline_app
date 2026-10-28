@@ -12,11 +12,13 @@ import 'package:record/record.dart';
 import '../../models/chat_message.dart';
 import '../../services/conversation_service.dart';
 import '../../services/home_signals_service.dart';
+import '../../services/outlook_service.dart';
 import '../../theme.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/dissolving_typing_indicator.dart';
 import '../../widgets/glowing_border.dart';
 import '../../widgets/live_timer_text.dart';
+import '../../widgets/mail_reply_meta.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/policy_confirm_sheet.dart';
@@ -124,9 +126,17 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
   // from cache/history is never streamed. See MessageBubble.streamIn.
   ChatMessage? _streamingMessage;
 
+  // The text of the in-flight message, so the typing row can say "Checking
+  // your inbox…" for a mail question (see OutlookStatus.pendingLabel).
+  // Empty for image/PDF sends, which never touch mail.
+  String _pendingText = '';
+
   @override
   void initState() {
     super.initState();
+    // Outlook status gates the mail suggestion chips and waiting label --
+    // cached app-wide, so this is a no-op after the first screen loads it.
+    unawaited(OutlookStatus.ensureLoaded());
     _promptController.addListener(_onComposerActivityChanged);
     _promptFocusNode.addListener(_onComposerActivityChanged);
     // Both auto-behaviors wait for _load() to finish first -- otherwise the
@@ -427,6 +437,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
   Future<void> _sendToBackend(String displayText, String backendText, {String? replyToPreview}) async {
     setState(() {
       _sending = true;
+      _pendingText = displayText;
       _messages = [
         ..._messages,
         ChatMessage(role: 'user', content: displayText, createdAt: DateTime.now(), replyToPreview: replyToPreview),
@@ -435,15 +446,18 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
     _scrollToEnd();
     try {
       final position = await _maybeGetLocation(backendText);
-      final (reply, actionCards) = await _service.sendGlobalChat(
+      final (reply, actionCards, replyMeta) = await _service.sendGlobalChat(
         backendText,
         lat: position?.latitude,
         lon: position?.longitude,
       );
       if (!mounted) return;
       _hadExchange = true;
-      final assistantMessage =
-          ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now(), actionCards: actionCards);
+      final assistantMessage = ChatMessage(
+          role: 'assistant', content: reply, createdAt: DateTime.now(), actionCards: actionCards, replyMeta: replyMeta);
+      // A reply that couldn't reach the mailbox means the saved Microsoft
+      // sign-in just went stale -- refresh so Settings/chips reflect it.
+      if (replyMeta != null) unawaited(OutlookStatus.refresh());
       // Not appended to _messages yet -- see _pendingReply's doc comment.
       // The typing row's index must not move in this same setState, or the
       // dissolve never actually plays on it.
@@ -537,6 +551,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
   Future<void> _sendPdf(File file) async {
     setState(() {
       _sending = true;
+      _pendingText = '';
       _messages = [
         ..._messages,
         ChatMessage(role: 'user', content: '[PDF document uploaded]', createdAt: DateTime.now()),
@@ -688,6 +703,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
   Future<void> _sendImage(File file, String description) async {
     setState(() {
       _sending = true;
+      _pendingText = '';
       _messages = [
         ..._messages,
         ChatMessage(role: 'user', content: description, createdAt: DateTime.now(), localImage: file),
@@ -811,6 +827,12 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
                               textAlign: TextAlign.center,
                               style: TextStyle(color: AppColors.dmTextSoft),
                             ),
+                            const SizedBox(height: 18),
+                            MailSuggestions(
+                              onPick: _sendInitialPrompt,
+                              enabled: !_sending,
+                              alignment: WrapAlignment.center,
+                            ),
                           ],
                         ),
                       ),
@@ -822,6 +844,7 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
                       itemBuilder: (context, i) {
                         if (i == _messages.length) {
                           return DissolvingTypingIndicator(
+                            label: OutlookStatus.pendingLabel(_pendingText),
                             disappear: _typingDissolving,
                             onDissolved: () {
                               if (!mounted) return;
@@ -864,6 +887,14 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Mail chips for an existing thread (an empty one shows them
+                // in its empty state instead) -- until the first mail reply,
+                // after which the user has clearly found the feature.
+                if (_messages.isNotEmpty && !_sending && _replyingTo == null && !MailSuggestions.hasMailReply(_messages))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: MailSuggestions(onPick: _sendInitialPrompt, singleLine: true),
+                  ),
                 if (_replyingTo != null)
                   Container(
                     margin: const EdgeInsets.only(bottom: 6),

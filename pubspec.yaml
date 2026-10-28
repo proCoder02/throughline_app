@@ -48,6 +48,7 @@ dependencies:
   # lands, instead of it just popping out of the list -- see
   # widgets/dissolving_typing_indicator.dart.
   fade_out_particle: ^1.2.1
+  flutter_markdown_plus: ^1.0.12
 
 dev_dependencies:
   flutter_test:

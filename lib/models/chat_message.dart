@@ -35,6 +35,12 @@ class ChatMessage {
   // card -- this field is just display data, never trusted as proof an
   // action is still valid.
   final List<Map<String, dynamic>>? actionCards;
+  // Only on a global-chat reply that used the Outlook mail tools:
+  // {tool_activity: [{label, error}], mail_sources: [{id, from, subject,
+  // received, web_link, read}]} -- what the assistant did and which emails
+  // it drew on (see MailReplyMeta). Persisted server-side (GET /chat/global
+  // returns it) and round-trips through the local cache like actionCards.
+  final Map<String, dynamic>? replyMeta;
 
   ChatMessage({
     required this.role,
@@ -43,6 +49,7 @@ class ChatMessage {
     this.replyToPreview,
     this.localImage,
     this.actionCards,
+    this.replyMeta,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -51,6 +58,7 @@ class ChatMessage {
         createdAt: DateTime.parse(json['created_at']).toLocal(),
         replyToPreview: json['reply_to_preview'] as String?,
         actionCards: (json['action_cards'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
+        replyMeta: json['reply_meta'] is Map ? Map<String, dynamic>.from(json['reply_meta'] as Map) : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -59,5 +67,6 @@ class ChatMessage {
         'created_at': createdAt.toUtc().toIso8601String(),
         if (replyToPreview != null) 'reply_to_preview': replyToPreview,
         if (actionCards != null && actionCards!.isNotEmpty) 'action_cards': actionCards,
+        if (replyMeta != null) 'reply_meta': replyMeta,
       };
 }

@@ -106,7 +106,9 @@ class ConversationService {
   /// Commerce (Swiggy MCP) card, and/or one per triggered tool action like
   /// log_expense/message_friend/send_email), present only when the
   /// backend actually has something for the user to review/confirm.
-  Future<(String reply, List<Map<String, dynamic>> actionCards)> sendGlobalChat(
+  /// replyMeta is non-null only when the reply used the Outlook mail tools
+  /// (which tools ran, which emails it drew on -- see MailReplyMeta).
+  Future<(String reply, List<Map<String, dynamic>> actionCards, Map<String, dynamic>? replyMeta)> sendGlobalChat(
     String prompt, {
     double? lat,
     double? lon,
@@ -120,12 +122,14 @@ class ConversationService {
     final actionCards = ((r.data['action_cards'] as List?) ?? const [])
         .map((e) => e as Map<String, dynamic>)
         .toList();
+    final rawMeta = r.data['reply_meta'];
+    final replyMeta = rawMeta is Map ? Map<String, dynamic>.from(rawMeta) : null;
     final now = DateTime.now();
     await _cache.appendGlobalMessages([
       ChatMessage(role: 'user', content: prompt, createdAt: now),
-      ChatMessage(role: 'assistant', content: reply, createdAt: now, actionCards: actionCards),
+      ChatMessage(role: 'assistant', content: reply, createdAt: now, actionCards: actionCards, replyMeta: replyMeta),
     ]);
-    return (reply, actionCards);
+    return (reply, actionCards, replyMeta);
   }
 
   /// Companion to sendGlobalChat -- sends an image (e.g. a bill photo) with

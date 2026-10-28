@@ -3,12 +3,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../main.dart' show themeProvider;
 import '../../models/category.dart';
 import '../../services/category_service.dart';
 import '../../services/commerce_service.dart';
+import '../../services/outlook_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/upload_service.dart';
 import '../../state/auth_provider.dart';
@@ -40,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   final _service = SettingsService();
   final _categoryService = CategoryService();
   final _commerceService = CommerceService();
+  final _outlookService = OutlookService();
   final _uploadService = UploadService();
   final _imagePicker = ImagePicker();
   final _newCategory = TextEditingController();
@@ -56,6 +60,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   // callback moment to hook -- resuming the app is the next best signal
   // that the OAuth flow may have just finished.
   Map<String, dynamic>? _swiggyStatus;
+
+  // Outlook mail -- status lives in the app-wide OutlookStatus.notifier
+  // (shared with the global chat). This flag only remembers that a connect
+  // was started here, so the next resume can confirm the result -- the
+  // Microsoft sign-in happens in the system browser, with no in-app
+  // callback moment to hook.
+  bool _outlookConnectPending = false;
 
   String? _personalization;
   String? _friendCode;
@@ -111,6 +122,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     _loadCategories();
     _loadNudgeSettings();
     _loadSwiggyStatus();
+    _loadOutlookStatus();
     _uploadService.status().then((s) {
       if (mounted) setState(() => _uploadsEnabled = s['enabled'] == true);
     }).catchError((_) {});
@@ -148,7 +160,176 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     // Connecting Swiggy opens a system browser (see CommerceService.connect)
     // -- there's no in-app callback moment, so refreshing on resume is the
     // next best signal that the OAuth flow may have just finished.
-    if (state == AppLifecycleState.resumed) _loadSwiggyStatus();
+    if (state == AppLifecycleState.resumed) {
+      _loadSwiggyStatus();
+      _loadOutlookStatus();
+    }
+  }
+
+  Future<void> _loadOutlookStatus() async {
+    final wasPending = _outlookConnectPending;
+    final wasReady = OutlookStatus.ready(OutlookStatus.notifier.value);
+    await OutlookStatus.refresh();
+    if (!mounted || !wasPending) return;
+    _outlookConnectPending = false;
+    final status = OutlookStatus.notifier.value;
+    // Back from the browser sign-in: confirm the outcome right here, the
+    // app-side equivalent of the web client's post-OAuth toast.
+    if (OutlookStatus.ready(status) && !wasReady) {
+      final who = status?['email'] as String?;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text('Outlook connected${who != null ? ' as $who' : ''}. Try asking: “Summarize my unread emails”.'),
+      ));
+    }
+  }
+
+  Future<void> _connectOutlook() async {
+    try {
+      _outlookConnectPending = true;
+      await _outlookService.connect();
+    } catch (e) {
+      _outlookConnectPending = false;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not start Outlook sign-in: $e')));
+    }
+  }
+
+  Future<void> _disconnectOutlook() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disconnect Outlook?'),
+        content: const Text(
+            'The assistant will stop reading your mail, and the saved Microsoft sign-in is deleted. You can reconnect any time.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _outlookService.disconnect();
+      await OutlookStatus.refresh();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Outlook disconnected')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not disconnect: $e')));
+    }
+  }
+
+  Widget _outlookCard() {
+    return ValueListenableBuilder<Map<String, dynamic>?>(
+      valueListenable: OutlookStatus.notifier,
+      builder: (context, status, _) {
+        if (status?['enabled'] != true) return const SizedBox.shrink();
+        final connected = status?['connected'] == true;
+        final needsReconnect = connected && status?['needs_reconnect'] == true;
+        final email = status?['email'] as String?;
+        final connectedAt = DateTime.tryParse('${status?['connected_at'] ?? ''}')?.toLocal();
+        final accent = ElevatedButton.styleFrom(backgroundColor: AppColors.dmAccent, foregroundColor: Colors.white);
+        final soft = TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5, height: 1.45);
+        final strong = TextStyle(color: AppColors.dmText, fontWeight: FontWeight.w600);
+
+        Widget fact(String title, String body) => Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text.rich(TextSpan(style: soft, children: [TextSpan(text: '$title ', style: strong), TextSpan(text: body)])),
+            );
+
+        return SettingsStyleCard(
+          title: 'Outlook',
+          subtitle: connected ? null : 'Connect your Outlook or Microsoft 365 mailbox, then ask about your email right in chat.',
+          children: [
+            if (needsReconnect)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Microsoft signed this connection out (a password change or expired sign-in does this). '
+                  'Reconnect to keep using your mail in chat.',
+                  style: TextStyle(color: AppColors.dmText, fontSize: 13, height: 1.4),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  if (connected && !needsReconnect) ...[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          connected ? (email ?? 'Connected') : 'Not connected',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (connected && !needsReconnect && connectedAt != null)
+                          Text('Connected since ${DateFormat.yMMMd().format(connectedAt)}', style: soft),
+                      ],
+                    ),
+                  ),
+                  if (!connected)
+                    ElevatedButton(style: accent, onPressed: _connectOutlook, child: const Text('Connect'))
+                  else if (needsReconnect)
+                    ElevatedButton(style: accent, onPressed: _connectOutlook, child: const Text('Reconnect'))
+                  else
+                    OutlinedButton(onPressed: _disconnectOutlook, child: const Text('Disconnect')),
+                ],
+              ),
+            ),
+            if (needsReconnect)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(onPressed: _disconnectOutlook, child: const Text('Disconnect instead')),
+              ),
+            if (connected && !needsReconnect) ...[
+              const SizedBox(height: 6),
+              Text('Try asking in chat', style: soft.copyWith(fontWeight: FontWeight.w600)),
+              for (final p in OutlookStatus.examplePrompts)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, left: 4),
+                  child: Text('•  “$p”', style: TextStyle(color: AppColors.dmText, fontSize: 13)),
+                ),
+            ],
+            const Divider(height: 22),
+            fact('Read-only.', 'The assistant can read and search your mail, but can never send, delete, move or change anything.'),
+            fact('How your data is used.',
+                'Emails you ask about are sent to our AI provider to write the answer. The answer, plus the sender, subject and date of emails it cites, is saved in your chat history.'),
+            if (connected) ...[
+              fact('Fully revoke access.',
+                  'Disconnect deletes our saved sign-in. To also remove the app from your Microsoft account:'),
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (final entry in OutlookStatus.revokeLinks.entries)
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: AppColors.dmAccent, padding: const EdgeInsets.symmetric(horizontal: 6)),
+                      onPressed: () => launchUrl(Uri.parse(entry.value), mode: LaunchMode.externalApplication),
+                      child: Text(entry.key),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _loadSwiggyStatus() async {
@@ -577,6 +758,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                         ),
                     ],
                   ),
+                _outlookCard(),
                 SettingsStyleCard(
                   title: 'Experimental',
                   subtitle: 'A separate sandbox screen -- not linked into the real home '

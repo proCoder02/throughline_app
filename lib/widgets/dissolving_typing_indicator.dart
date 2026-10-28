@@ -16,8 +16,9 @@ import 'typing_indicator.dart';
 class DissolvingTypingIndicator extends StatelessWidget {
   final bool disappear;
   final VoidCallback onDissolved;
+  final String? label;
 
-  const DissolvingTypingIndicator({super.key, required this.disappear, required this.onDissolved});
+  const DissolvingTypingIndicator({super.key, required this.disappear, required this.onDissolved, this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +26,7 @@ class DissolvingTypingIndicator extends StatelessWidget {
       disappear: disappear,
       duration: const Duration(milliseconds: 550),
       onAnimationEnd: onDissolved,
-      child: const TypingIndicator(),
+      child: TypingIndicator(label: label),
     );
   }
 }
