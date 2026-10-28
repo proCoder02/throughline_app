@@ -123,6 +123,16 @@ class MailStatus {
   static String? pendingLabel(String text) =>
       anyReady() && _mailIntent.hasMatch(text) ? 'Checking your inbox…' : null;
 
+  // Gmail links saved by the first release used /mail/u/?authuser=<addr>#all/<id>,
+  // whose authuser redirect can drop the #fragment -- rewrite them to the
+  // /mail/u/<addr>/#all/<id> form new replies already carry.
+  static final _oldGmailLink = RegExp(r'^https://mail\.google\.com/mail/u/\?authuser=([^#]+)#all/(.+)$');
+
+  static String _fixOldGmailLink(String link) {
+    final m = _oldGmailLink.firstMatch(link);
+    return m == null ? link : 'https://mail.google.com/mail/u/${Uri.decodeComponent(m.group(1)!)}/#all/${m.group(2)}';
+  }
+
   static const examplePrompts = [
     'Summarize my unread emails',
     'Anything urgent in my inbox today?',
@@ -138,7 +148,7 @@ class MailStatus {
   ///     which email to look for ([OpenedEmail.appInbox]);
   ///  3. the web link in the browser, when the app isn't installed.
   static Future<OpenedEmail> openEmail(MailProvider provider, String? webLink) async {
-    final link = webLink == null ? null : Uri.tryParse(webLink);
+    final link = webLink == null ? null : Uri.tryParse(_fixOldGmailLink(webLink));
     if (link != null && link.hasScheme) {
       try {
         if (await launchUrl(link, mode: LaunchMode.externalNonBrowserApplication)) return OpenedEmail.exact;
