@@ -25,9 +25,9 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
 
   List<Map> _list(String key) => ((widget.meta[key] as List?) ?? const []).whereType<Map>().toList();
 
-  Future<void> _reconnect(MailProvider provider) async {
+  Future<void> _reconnect(MailProvider provider, String? account) async {
     try {
-      await MailService(provider).connect();
+      await MailService(provider).connect(loginHint: account);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not start Outlook sign-in: $e')));
@@ -50,7 +50,8 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final a in activity)
-            _ActivityLine(activity: a, onReconnect: () => _reconnect(MailProvider.of(a['provider']))),
+            _ActivityLine(
+                activity: a, onReconnect: () => _reconnect(MailProvider.of(a['provider']), a['account'] as String?)),
           if (sources.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(top: 6, bottom: 4),
@@ -59,7 +60,7 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
                 style: TextStyle(color: AppColors.dmTextSoft, fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.6),
               ),
             ),
-            for (final s in shown) _SourceTile(source: s),
+            for (final s in shown) _SourceTile(source: s, showAccount: MailStatus.linkedCount() > 1),
             if (sources.length > _visibleSources)
               TextButton(
                 style: TextButton.styleFrom(
@@ -118,8 +119,9 @@ class _ActivityLine extends StatelessWidget {
 
 class _SourceTile extends StatelessWidget {
   final Map source;
+  final bool showAccount;
 
-  const _SourceTile({required this.source});
+  const _SourceTile({required this.source, this.showAccount = false});
 
   static String _senderName(String? from) {
     // "Name <addr>" -> "Name"; a bare address stays as-is.
@@ -223,6 +225,13 @@ class _SourceTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12),
                         ),
+                        if (showAccount && (source['account'] as String?) != null)
+                          Text(
+                            source['account'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: AppColors.dmTextSoft, fontSize: 10.5),
+                          ),
                       ],
                     ),
                   ),

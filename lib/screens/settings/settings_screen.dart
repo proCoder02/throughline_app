@@ -165,28 +165,36 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     }
   }
 
+  /// Healthy mailboxes per address before a connect started, so the next
+  /// resume can say which one was just added or reconnected.
+  Set<String> _readyEmails(MailProvider p) => {
+        for (final a in MailStatus.accounts(MailStatus.of(p)))
+          if (a['needs_reconnect'] != true) '${a['email']}',
+      };
+  Set<String> _readyBefore = const {};
+
   Future<void> _loadMailStatus() async {
     final pending = _mailConnectPending;
-    final wasReady = pending != null && MailStatus.ready(MailStatus.of(pending));
     await MailStatus.refresh();
     if (!mounted || pending == null) return;
     _mailConnectPending = null;
-    final status = MailStatus.of(pending);
     // Back from the browser sign-in: confirm the outcome right here, the
     // app-side equivalent of the web client's post-OAuth toast.
-    if (MailStatus.ready(status) && !wasReady) {
-      final who = status?['email'] as String?;
+    final added = _readyEmails(pending).difference(_readyBefore);
+    if (added.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         duration: const Duration(seconds: 6),
-        content: Text('${pending.label} connected${who != null ? ' as $who' : ''}. Try asking: “Summarize my unread emails”.'),
+        content: Text('${pending.label} connected as ${added.first}. Try asking: “Summarize my unread emails”.'),
       ));
     }
   }
 
-  Future<void> _connectMail(MailProvider provider) async {
+  /// [loginHint]: reconnect that already-linked address; null adds a mailbox.
+  Future<void> _connectMail(MailProvider provider, {String? loginHint}) async {
     try {
       _mailConnectPending = provider;
-      await MailService(provider).connect();
+      _readyBefore = _readyEmails(provider);
+      await MailService(provider).connect(loginHint: loginHint);
     } catch (e) {
       _mailConnectPending = null;
       if (!mounted) return;
@@ -194,13 +202,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     }
   }
 
-  Future<void> _disconnectMail(MailProvider provider) async {
+  Future<void> _disconnectMail(MailProvider provider, Map<String, dynamic> account) async {
+    final which = (account['email'] as String?) ?? 'this ${provider.label} account';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Disconnect ${provider.label}?'),
+        title: Text('Disconnect $which?'),
         content: Text(
-            'The assistant will stop reading your ${provider.label} mail, and the saved sign-in is deleted. You can reconnect any time.'),
+            'The assistant will stop reading $which, and its saved sign-in is deleted. Other linked mailboxes '
+            "aren't affected. You can reconnect any time."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           TextButton(
@@ -213,12 +223,58 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     );
     if (confirmed != true) return;
     try {
-      await MailService(provider).disconnect();
+      await MailService(provider).disconnect(accountId: account['id'] as int?);
       await MailStatus.refresh(provider);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${provider.label} disconnected')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$which disconnected')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not disconnect: $e')));
     }
+  }
+
+  /// One linked mailbox: address, state, and its own Reconnect/Disconnect.
+  Widget _mailAccountRow(MailProvider provider, Map<String, dynamic> account, ButtonStyle accent, TextStyle soft) {
+    final broken = account['needs_reconnect'] == true;
+    final email = account['email'] as String?;
+    final connectedAt = DateTime.tryParse('${account['connected_at'] ?? ''}')?.toLocal();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: broken ? Colors.amber : Colors.green, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(email ?? '${provider.label} account',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                Text(
+                  broken
+                      ? 'Needs reconnecting'
+                      : connectedAt != null
+                          ? 'Connected since ${DateFormat.yMMMd().format(connectedAt)}'
+                          : 'Connected',
+                  style: soft,
+                ),
+              ],
+            ),
+          ),
+          if (broken)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ElevatedButton(
+                  style: accent,
+                  onPressed: () => _connectMail(provider, loginHint: email),
+                  child: const Text('Reconnect')),
+            ),
+          OutlinedButton(onPressed: () => _disconnectMail(provider, account), child: const Text('Disconnect')),
+        ],
+      ),
+    );
   }
 
   Widget _mailCard(MailProvider provider) {
@@ -226,10 +282,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       valueListenable: MailStatus.notifiers[provider]!,
       builder: (context, status, _) {
         if (status?['enabled'] != true) return const SizedBox.shrink();
-        final connected = status?['connected'] == true;
-        final needsReconnect = connected && status?['needs_reconnect'] == true;
-        final email = status?['email'] as String?;
-        final connectedAt = DateTime.tryParse('${status?['connected_at'] ?? ''}')?.toLocal();
+        final accounts = MailStatus.accounts(status);
+        final connected = accounts.isNotEmpty;
+        final anyBroken = accounts.any((a) => a['needs_reconnect'] == true);
         final accent = ElevatedButton.styleFrom(backgroundColor: AppColors.dmAccent, foregroundColor: Colors.white);
         final soft = TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5, height: 1.45);
         final strong = TextStyle(color: AppColors.dmText, fontWeight: FontWeight.w600);
@@ -243,7 +298,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           title: provider.label,
           subtitle: connected ? null : provider.blurb,
           children: [
-            if (needsReconnect)
+            if (anyBroken)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
@@ -252,57 +307,48 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '${provider.signedOutReason} Reconnect to keep using your mail in chat.',
+                  '${provider.signedOutReason} Reconnect the marked mailbox to keep using it in chat.',
                   style: TextStyle(color: AppColors.dmText, fontSize: 13, height: 1.4),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  if (connected && !needsReconnect) ...[
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+            if (!connected)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Not connected', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
-                    const SizedBox(width: 8),
+                    ElevatedButton(style: accent, onPressed: () => _connectMail(provider), child: const Text('Connect')),
                   ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          connected ? (email ?? 'Connected') : 'Not connected',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (connected && !needsReconnect && connectedAt != null)
-                          Text('Connected since ${DateFormat.yMMMd().format(connectedAt)}', style: soft),
-                      ],
-                    ),
-                  ),
-                  if (!connected)
-                    ElevatedButton(style: accent, onPressed: () => _connectMail(provider), child: const Text('Connect'))
-                  else if (needsReconnect)
-                    ElevatedButton(style: accent, onPressed: () => _connectMail(provider), child: const Text('Reconnect'))
-                  else
-                    OutlinedButton(onPressed: () => _disconnectMail(provider), child: const Text('Disconnect')),
-                ],
-              ),
-            ),
-            if (needsReconnect)
+                ),
+              )
+            else ...[
+              for (final a in accounts) _mailAccountRow(provider, a, accent, soft),
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton(onPressed: () => _disconnectMail(provider), child: const Text('Disconnect instead')),
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: AppColors.dmAccent, padding: EdgeInsets.zero),
+                  onPressed: () => _connectMail(provider),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text('Add another ${provider.label} account'),
+                ),
               ),
-            if (connected && !needsReconnect) ...[
-              const SizedBox(height: 6),
+            ],
+            if (connected && !anyBroken) ...[
+              const SizedBox(height: 2),
               Text('Try asking in chat', style: soft.copyWith(fontWeight: FontWeight.w600)),
               for (final p in MailStatus.examplePrompts)
                 Padding(
                   padding: const EdgeInsets.only(top: 2, left: 4),
                   child: Text('•  “$p”', style: TextStyle(color: AppColors.dmText, fontSize: 13)),
+                ),
+              if (accounts.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                      'Questions cover all your ${provider.label} accounts -- name one (“in my work inbox…”) to narrow it down.',
+                      style: soft),
                 ),
             ],
             const Divider(height: 22),
@@ -311,7 +357,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 'Emails you ask about are sent to our AI provider to write the answer. The answer, plus the sender, subject and date of emails it cites, is saved in your chat history.'),
             if (status?['weekly_reconnect'] == true)
               fact('Weekly reconnect, for now.',
-                  "While Google is still verifying our access, Google signs this connection out after 7 days -- you'll see a Reconnect button when that happens."),
+                  "While Google is still verifying our access, Google signs each connection out after 7 days -- you'll see a Reconnect button when that happens."),
             if (connected) ...[
               fact('Fully revoke access.',
                   'Disconnect deletes our saved sign-in. To also remove the app from your account:'),

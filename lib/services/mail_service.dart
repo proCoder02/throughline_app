@@ -57,7 +57,8 @@ class MailService {
   final _api = ApiClient.instance;
   String get _base => '/integrations/${provider.name}';
 
-  /// {enabled, connected, needs_reconnect, email, connected_at, (gmail) weekly_reconnect}
+  /// {enabled, accounts: [{id, email, connected_at, needs_reconnect}],
+  /// (gmail) weekly_reconnect, plus single-account legacy fields}
   Future<Map<String, dynamic>> status() async {
     final r = await _api.dio.get('$_base/status');
     return Map<String, dynamic>.from(r.data);
@@ -68,12 +69,17 @@ class MailService {
   /// a system browser can't carry this app's Bearer token. The backend
   /// marks the attempt as the 'app' client, so its callback page says to
   /// come back here; MailStatus picks up the result when the app resumes.
-  Future<void> connect() async {
-    final r = await _api.dio.get('$_base/connect_url');
+  /// Signing in with a different account ADDS a mailbox; [loginHint] (an
+  /// already-linked address) reconnects that one.
+  Future<void> connect({String? loginHint}) async {
+    final r = await _api.dio.get('$_base/connect_url',
+        queryParameters: {if (loginHint != null && loginHint.isNotEmpty) 'login_hint': loginHint});
     await launchUrl(Uri.parse(r.data['url'] as String), mode: LaunchMode.externalApplication);
   }
 
-  Future<void> disconnect() => _api.dio.post('$_base/disconnect', data: {});
+  /// One mailbox, or (null) every linked mailbox for this provider.
+  Future<void> disconnect({int? accountId}) =>
+      _api.dio.post('$_base/disconnect', data: {if (accountId != null) 'account_id': accountId});
 }
 
 enum OpenedEmail { exact, appInbox, browser, failed }
@@ -110,11 +116,25 @@ class MailStatus {
 
   static Map<String, dynamic>? of(MailProvider p) => notifiers[p]!.value;
 
-  /// Connected and usable for chat right now.
-  static bool ready(Map<String, dynamic>? s) =>
-      s?['enabled'] == true && s?['connected'] == true && s?['needs_reconnect'] != true;
+  /// A provider status's linked mailboxes ({id, email, connected_at,
+  /// needs_reconnect}) -- tolerates a backend that predates multi-account.
+  static List<Map<String, dynamic>> accounts(Map<String, dynamic>? s) {
+    if (s?['enabled'] != true) return const [];
+    final list = s?['accounts'];
+    if (list is List) return list.whereType<Map>().map((a) => Map<String, dynamic>.from(a)).toList();
+    return s?['connected'] == true
+        ? [{'id': null, 'email': s?['email'], 'connected_at': s?['connected_at'], 'needs_reconnect': s?['needs_reconnect'] == true}]
+        : const [];
+  }
+
+  /// At least one of this provider's mailboxes is usable for chat right now.
+  static bool ready(Map<String, dynamic>? s) => accounts(s).any((a) => a['needs_reconnect'] != true);
 
   static bool anyReady() => MailProvider.values.any((p) => ready(of(p)));
+
+  /// Linked mailboxes across providers -- source tiles name the mailbox an
+  /// email came from only when there's more than one.
+  static int linkedCount() => MailProvider.values.fold(0, (n, p) => n + accounts(of(p)).length);
 
   // Mirrors mail_common._MAIL_INTENT_RE -- only picks the waiting label,
   // never whether the backend actually uses mail.
