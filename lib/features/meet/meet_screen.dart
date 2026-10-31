@@ -142,7 +142,8 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       MaterialPageRoute(builder: (_) => MeetCardEditorScreen(initial: mine)),
     );
     if (saved != null) {
-      _mine = MyMeetCard(saved: true, card: saved, me: mine.me, traitOptions: mine.traitOptions, canSuggest: mine.canSuggest);
+      _mine = MyMeetCard(
+          saved: true, card: saved, me: mine.me, traitOptions: mine.traitOptions, colors: mine.colors, canSuggest: mine.canSuggest);
     }
     if (!mounted) return;
     if (_mine!.saved && _mine!.card.sharing) {
@@ -342,7 +343,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     try {
       await _api.addFriend(enc.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('You and ${enc.other.name} are now friends.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connected -- ${enc.other.name} is now in your Friends.')));
       }
     } catch (_) {
       if (mounted) {
@@ -691,7 +692,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         if (card != null)
-          CardReveal(child: MeetCardView(card: card, person: enc.other))
+          CardReveal(child: MeetCardView(card: card, person: enc.other, inCommon: enc.inCommon))
         else
           _Notice(
             icon: Icons.visibility_off_outlined,
@@ -703,7 +704,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
           onPressed: _actionBusy ? null : _addFriend,
           icon: const Icon(Icons.person_add_alt_1_outlined),
           style: FilledButton.styleFrom(backgroundColor: AppColors.accent, minimumSize: const Size.fromHeight(48)),
-          label: const Text('Add friend'),
+          label: const Text('Connect'),
         ),
         const SizedBox(height: 10),
         OutlinedButton(

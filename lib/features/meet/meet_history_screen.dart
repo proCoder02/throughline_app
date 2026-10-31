@@ -73,7 +73,7 @@ class _MeetHistoryScreenState extends State<MeetHistoryScreen> {
       builder: (_) => Scaffold(
         backgroundColor: AppColors.bgApp,
         appBar: AppBar(backgroundColor: AppColors.bgApp, title: Text(e.other.name)),
-        body: ListView(padding: const EdgeInsets.all(16), children: [MeetCardView(card: e.card!, person: e.other)]),
+        body: ListView(padding: const EdgeInsets.all(16), children: [MeetCardView(card: e.card!, person: e.other, inCommon: e.inCommon)]),
       ),
     ));
   }

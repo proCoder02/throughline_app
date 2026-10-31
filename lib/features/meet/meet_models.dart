@@ -22,6 +22,12 @@ class MeetCard {
   final String education;
   final String about;
   final String style;
+  /// One line people read first ("Builds AI products; happiest on a trail.").
+  final String hook;
+  /// A conversation starter ("trekking in Ladakh").
+  final String askMe;
+  /// One of the server's colour names, or '' for "pick from my name".
+  final String color;
   final List<String> traits;
   final List<String> interests;
   final List<String> likes;
@@ -36,6 +42,9 @@ class MeetCard {
     this.education = '',
     this.about = '',
     this.style = '',
+    this.hook = '',
+    this.askMe = '',
+    this.color = '',
     this.traits = const [],
     this.interests = const [],
     this.likes = const [],
@@ -53,6 +62,9 @@ class MeetCard {
         education: (j['education'] as String?) ?? '',
         about: (j['about'] as String?) ?? '',
         style: (j['style'] as String?) ?? '',
+        hook: (j['hook'] as String?) ?? '',
+        askMe: (j['ask_me'] as String?) ?? '',
+        color: (j['color'] as String?) ?? '',
         traits: _list(j['traits']),
         interests: _list(j['interests']),
         likes: _list(j['likes']),
@@ -68,6 +80,9 @@ class MeetCard {
         'education': education,
         'about': about,
         'style': style,
+        'hook': hook,
+        'ask_me': askMe,
+        'color': color,
         'traits': traits,
         'interests': interests,
         'likes': likes,
@@ -76,7 +91,7 @@ class MeetCard {
       };
 
   bool get isEmpty =>
-      [headline, organization, city, education, about, style].every((s) => s.isEmpty) &&
+      [headline, organization, city, education, about, style, hook, askMe].every((s) => s.isEmpty) &&
       [traits, interests, likes, links].every((l) => l.isEmpty);
 }
 
@@ -85,6 +100,7 @@ class MyMeetCard {
   final MeetCard card;
   final MeetPerson me;
   final List<String> traitOptions;
+  final List<String> colors;
   final bool canSuggest;
 
   const MyMeetCard({
@@ -92,6 +108,7 @@ class MyMeetCard {
     required this.card,
     required this.me,
     this.traitOptions = const [],
+    this.colors = const [],
     this.canSuggest = false,
   });
 }
@@ -142,6 +159,8 @@ class MeetEncounter {
   final bool theyConfirmed;
   final MeetCard? card;
   final bool cardHidden;
+  /// What we share (interests, likes, traits, city...), once both shared.
+  final List<String> inCommon;
   final DateTime? createdAt;
   final String method; // bluetooth | qr
   /// While pending: seconds left to tap Share, as of [receivedAt].
@@ -156,6 +175,7 @@ class MeetEncounter {
     this.theyConfirmed = false,
     this.card,
     this.cardHidden = false,
+    this.inCommon = const [],
     this.createdAt,
     this.method = 'bluetooth',
     this.expiresIn,
@@ -170,6 +190,7 @@ class MeetEncounter {
         theyConfirmed: (j['they_confirmed'] as bool?) ?? false,
         card: j['card'] is Map ? MeetCard.fromJson((j['card'] as Map).cast<String, dynamic>()) : null,
         cardHidden: (j['card_hidden'] as bool?) ?? false,
+        inCommon: (j['in_common'] as List?)?.map((e) => e.toString()).toList() ?? const [],
         createdAt: DateTime.tryParse((j['created_at'] as String?) ?? ''),
         method: (j['method'] as String?) ?? 'bluetooth',
         expiresIn: (j['expires_in'] as num?)?.toInt(),

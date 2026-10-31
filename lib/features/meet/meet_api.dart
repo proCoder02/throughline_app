@@ -27,6 +27,7 @@ class MeetApi {
       card: MeetCard.fromJson((j['card'] as Map).cast<String, dynamic>()),
       me: MeetPerson.fromJson((j['me'] as Map).cast<String, dynamic>()),
       traitOptions: (j['trait_options'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      colors: (j['colors'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       canSuggest: (j['can_suggest'] as bool?) ?? false,
     );
   }
