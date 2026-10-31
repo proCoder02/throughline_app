@@ -141,7 +141,9 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     final saved = await Navigator.of(context).push<MeetCard>(
       MaterialPageRoute(builder: (_) => MeetCardEditorScreen(initial: mine)),
     );
-    if (saved != null) _mine = MyMeetCard(saved: true, card: saved, me: mine.me);
+    if (saved != null) {
+      _mine = MyMeetCard(saved: true, card: saved, me: mine.me, traitOptions: mine.traitOptions, canSuggest: mine.canSuggest);
+    }
     if (!mounted) return;
     if (_mine!.saved && _mine!.card.sharing) {
       await _begin();

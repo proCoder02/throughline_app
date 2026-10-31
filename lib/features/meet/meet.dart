@@ -1,6 +1,7 @@
 /// Throughline Meet -- swap personality cards by holding two phones
 /// together. Everything for the feature lives in this folder; the rest of
-/// the app only uses [MeetEntryButton] (or pushes [MeetScreen] itself).
+/// the app only uses [MeetEntryButton], [MeetShortcut] (app-icon shortcut)
+/// or pushes [MeetScreen] itself.
 /// Backend counterpart: the meet/ package in the speech2text repo.
 library;
 
@@ -9,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'meet_screen.dart';
 
 export 'meet_screen.dart' show MeetScreen;
+export 'meet_shortcut.dart' show MeetShortcut;
 
 /// App-bar button that opens Meet.
 class MeetEntryButton extends StatelessWidget {

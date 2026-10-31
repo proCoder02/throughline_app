@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../main.dart' show notifyProvider, callProvider, navigatorKey;
+import '../features/meet/meet.dart';
+import '../main.dart' show authProvider, notifyProvider, callProvider, navigatorKey;
 import '../models/conversation.dart';
 import '../models/friend.dart';
 import '../services/api_client.dart';
@@ -93,6 +94,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_bootstrap());
+    // "Meet someone" on the app icon's long-press menu.
+    MeetShortcut.register(() {
+      if (!authProvider.isAuthenticated) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const MeetScreen()));
+      });
+    });
   }
 
   // WhatsApp/Telegram-style instant ticks after backgrounding: without this,

@@ -12,19 +12,34 @@ class MeetPerson {
 }
 
 /// My own editable card, or the other person's (then [person] is set).
+/// Three parts, like a spoken introduction: who I am (headline/role,
+/// organization, city, education), personality (traits, how I communicate,
+/// about) and what I'm into / how to stay in touch (interests, likes, links).
 class MeetCard {
   final String headline;
+  final String organization;
+  final String city;
+  final String education;
   final String about;
+  final String style;
+  final List<String> traits;
   final List<String> interests;
   final List<String> likes;
+  final List<String> links;
   final bool sharing;
   final MeetPerson? person;
 
   const MeetCard({
     this.headline = '',
+    this.organization = '',
+    this.city = '',
+    this.education = '',
     this.about = '',
+    this.style = '',
+    this.traits = const [],
     this.interests = const [],
     this.likes = const [],
+    this.links = const [],
     this.sharing = true,
     this.person,
   });
@@ -33,25 +48,60 @@ class MeetCard {
 
   factory MeetCard.fromJson(Map<String, dynamic> j) => MeetCard(
         headline: (j['headline'] as String?) ?? '',
+        organization: (j['organization'] as String?) ?? '',
+        city: (j['city'] as String?) ?? '',
+        education: (j['education'] as String?) ?? '',
         about: (j['about'] as String?) ?? '',
+        style: (j['style'] as String?) ?? '',
+        traits: _list(j['traits']),
         interests: _list(j['interests']),
         likes: _list(j['likes']),
+        links: _list(j['links']),
         sharing: (j['sharing'] as bool?) ?? true,
         person: j['name'] != null ? MeetPerson.fromJson(j) : null,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'headline': headline, 'about': about, 'interests': interests, 'likes': likes, 'sharing': sharing};
+  Map<String, dynamic> toJson() => {
+        'headline': headline,
+        'organization': organization,
+        'city': city,
+        'education': education,
+        'about': about,
+        'style': style,
+        'traits': traits,
+        'interests': interests,
+        'likes': likes,
+        'links': links,
+        'sharing': sharing,
+      };
 
-  bool get isEmpty => headline.isEmpty && about.isEmpty && interests.isEmpty && likes.isEmpty;
+  bool get isEmpty =>
+      [headline, organization, city, education, about, style].every((s) => s.isEmpty) &&
+      [traits, interests, likes, links].every((l) => l.isEmpty);
 }
 
 class MyMeetCard {
   final bool saved;
   final MeetCard card;
   final MeetPerson me;
+  final List<String> traitOptions;
+  final bool canSuggest;
 
-  const MyMeetCard({required this.saved, required this.card, required this.me});
+  const MyMeetCard({
+    required this.saved,
+    required this.card,
+    required this.me,
+    this.traitOptions = const [],
+    this.canSuggest = false,
+  });
+}
+
+/// Drafted personality from Throughline -- only ever lands in the editor.
+class MeetSuggestion {
+  final List<String> traits;
+  final String style;
+
+  const MeetSuggestion({this.traits = const [], this.style = ''});
 }
 
 /// Everything the phone needs to broadcast and judge a "touch" -- tunables

@@ -7,6 +7,11 @@ import 'meet_models.dart';
 /// /meet/* then falls through to the web app's page and isn't JSON.
 class MeetUnavailable implements Exception {}
 
+class MeetSuggestionError implements Exception {
+  final String message;
+  const MeetSuggestionError(this.message);
+}
+
 class MeetApi {
   final _api = ApiClient.instance;
 
@@ -21,7 +26,25 @@ class MeetApi {
       saved: (j['saved'] as bool?) ?? false,
       card: MeetCard.fromJson((j['card'] as Map).cast<String, dynamic>()),
       me: MeetPerson.fromJson((j['me'] as Map).cast<String, dynamic>()),
+      traitOptions: (j['trait_options'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      canSuggest: (j['can_suggest'] as bool?) ?? false,
     );
+  }
+
+  /// Throws [MeetSuggestionError] with a message the editor can show as-is.
+  Future<MeetSuggestion> suggest() async {
+    try {
+      final j = _json(await _api.dio.post('/meet/card/suggest'));
+      return MeetSuggestion(
+        traits: (j['traits'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+        style: (j['style'] as String?) ?? '',
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      throw MeetSuggestionError(data is Map && data['error'] is String
+          ? data['error'] as String
+          : "Couldn't make a suggestion right now. Try again in a moment.");
+    }
   }
 
   Future<MeetCard> saveCard(MeetCard card) async {

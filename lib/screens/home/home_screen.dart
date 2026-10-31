@@ -1,3 +1,4 @@
+import '../../features/meet/meet.dart';
 import 'dart:async';
 import 'dart:ui';
 
@@ -284,6 +285,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 10),
                             _QuickActionsRow(
                               onChat: () => _openChat(),
+                              onMeet: () => Navigator.of(context)
+                                  .push(MaterialPageRoute(builder: (_) => const MeetScreen())),
                               onListen: () => widget.onNavigateToTab(1),
                               onTasks: () => widget.onNavigateToTab(2),
                               onPeople: () => widget.onNavigateToTab(4),
@@ -876,6 +879,7 @@ class _WorldTeaserCard extends StatelessWidget {
 
 class _QuickActionsRow extends StatelessWidget {
   final VoidCallback onChat;
+  final VoidCallback onMeet;
   final VoidCallback onListen;
   final VoidCallback onTasks;
   final VoidCallback onPeople;
@@ -883,6 +887,7 @@ class _QuickActionsRow extends StatelessWidget {
 
   const _QuickActionsRow({
     required this.onChat,
+    required this.onMeet,
     required this.onListen,
     required this.onTasks,
     required this.onPeople,
@@ -893,6 +898,7 @@ class _QuickActionsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       (Icons.chat_bubble_outline, 'Chat', 'Talk to your AI', onChat),
+      (Icons.contactless_outlined, 'Meet', 'Swap cards in person', onMeet),
       (Icons.mic_none, 'Listen', 'Voice notes & calls', onListen),
       (Icons.check_box_outlined, 'Tasks', 'Manage your tasks', onTasks),
       (Icons.people_outline, 'People', 'Your network', onPeople),
