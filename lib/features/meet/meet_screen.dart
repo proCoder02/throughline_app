@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
+import 'meet_animations.dart';
 import 'meet_api.dart';
 import 'meet_card_editor.dart';
 import 'meet_card_view.dart';
@@ -39,13 +40,13 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   MeetBlockReason? _blocked;
   MeetEncounter? _encounter;
   String? _message;
-  int? _nearest;
+  MeetSignal _signal = MeetSignal.none;
   bool _reporting = false;
   bool _actionBusy = false;
   final Set<int> _dismissed = {}; // encounters already finished on this screen
 
   StreamSubscription<String>? _touchSub;
-  StreamSubscription<int?>? _nearestSub;
+  StreamSubscription<MeetSignal>? _signalSub;
   Timer? _rotateTimer;
   Timer? _pollTimer;
 
@@ -54,8 +55,11 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _touchSub = _proximity.touches.listen(_onTouch);
-    _nearestSub = _proximity.nearestSignal.listen((v) {
-      if (mounted && v != _nearest) setState(() => _nearest = v);
+    _signalSub = _proximity.signal.listen((v) {
+      if (!mounted) return;
+      // A light tick the moment another phone comes into range.
+      if (_signal.rssi == null && v.rssi != null && _phase == _Phase.searching) HapticFeedback.selectionClick();
+      if (v.rssi != _signal.rssi || (v.hold - _signal.hold).abs() > 0.01) setState(() => _signal = v);
     });
     _load();
   }
@@ -66,7 +70,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     _rotateTimer?.cancel();
     _pollTimer?.cancel();
     _touchSub?.cancel();
-    _nearestSub?.cancel();
+    _signalSub?.cancel();
     _proximity.dispose();
     super.dispose();
   }
@@ -175,7 +179,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     _rotateTimer?.cancel();
     _rotateTimer = null;
     await _proximity.stop();
-    if (mounted && _nearest != null) setState(() => _nearest = null);
+    if (mounted && _signal.rssi != null) setState(() => _signal = MeetSignal.none);
   }
 
   // ---- touching ----
@@ -221,7 +225,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       setState(() => _encounter = next);
       if (next.isShared) {
         _pollTimer?.cancel();
-        if (_phase != _Phase.shared) HapticFeedback.mediumImpact();
+        if (_phase != _Phase.shared) HapticFeedback.heavyImpact();
         _set(_Phase.shared);
       } else if (next.isFinished) {
         _pollTimer?.cancel();
@@ -251,6 +255,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
         _backToSearching();
       } else if (next.isShared) {
         _pollTimer?.cancel();
+        HapticFeedback.heavyImpact();
         _set(_Phase.shared);
       } else {
         _set(_Phase.waitingForThem);
@@ -367,8 +372,19 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: SafeArea(
-        child: AnimatedSwitcher(duration: const Duration(milliseconds: 250), child: _body()),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: AnimatedSwitcher(duration: const Duration(milliseconds: 250), child: _body()),
+          ),
+          if (_phase == _Phase.searching)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: EdgeGlow(level: signalLevel(_signal.rssi, _session?.rssiThreshold ?? -40)),
+            ),
+        ],
       ),
     );
   }
@@ -467,7 +483,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
 
   Widget _searching() {
     final threshold = _session?.rssiThreshold ?? -40;
-    final near = _nearest;
+    final near = _signal.rssi;
     final hint = near == null
         ? 'Looking for another phone with Meet open…'
         : near >= threshold
@@ -478,7 +494,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
       children: [
         const SizedBox(height: 12),
-        _Pulse(active: near != null),
+        ProximityOrb(level: signalLevel(near, threshold), hold: _signal.hold),
         const SizedBox(height: 28),
         Text('Hold your phones together',
             textAlign: TextAlign.center, style: appHeadlineFont(color: AppColors.text, fontSize: 24)),
@@ -514,7 +530,10 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       key: const ValueKey('confirm'),
       padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
       children: [
-        Center(child: InitialAvatar(name: enc.other.name, imageUrl: enc.other.photo, size: 96)),
+        if (_mine != null)
+          MergeAvatars(me: _mine!.me, them: enc.other)
+        else
+          Center(child: InitialAvatar(name: enc.other.name, imageUrl: enc.other.photo, size: 96)),
         const SizedBox(height: 20),
         Text(waiting ? 'Waiting for ${enc.other.name}…' : 'You met ${enc.other.name}',
             textAlign: TextAlign.center, style: appHeadlineFont(color: AppColors.text, fontSize: 24)),
@@ -556,7 +575,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         if (card != null)
-          MeetCardView(card: card, person: enc.other)
+          CardReveal(child: MeetCardView(card: card, person: enc.other))
         else
           _Notice(
             icon: Icons.visibility_off_outlined,
@@ -618,70 +637,6 @@ class _Notice extends StatelessWidget {
                 child: Text(action!),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Concentric rings that breathe faster once another phone is in range.
-class _Pulse extends StatefulWidget {
-  final bool active;
-
-  const _Pulse({required this.active});
-
-  @override
-  State<_Pulse> createState() => _PulseState();
-}
-
-class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))..repeat();
-
-  @override
-  void didUpdateWidget(covariant _Pulse old) {
-    super.didUpdateWidget(old);
-    if (old.active != widget.active) {
-      _c.duration = Duration(milliseconds: widget.active ? 1100 : 2400);
-      _c.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-    return SizedBox(
-      height: 160,
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (_, __) => Stack(
-          alignment: Alignment.center,
-          children: [
-            if (!reduceMotion)
-              for (final offset in const [0.0, 0.33, 0.66])
-                Builder(builder: (_) {
-                  final t = (_c.value + offset) % 1.0;
-                  return Container(
-                    width: 64 + 96 * t,
-                    height: 64 + 96 * t,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.accent.withValues(alpha: (1 - t) * 0.6), width: 2),
-                    ),
-                  );
-                }),
-            Container(
-              width: 64,
-              height: 64,
-              decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-              child: const Icon(Icons.contactless_outlined, color: Colors.white, size: 32),
-            ),
           ],
         ),
       ),

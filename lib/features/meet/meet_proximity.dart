@@ -13,6 +13,17 @@ import 'touch_detector.dart';
 /// Why Meet can't run right now -- each maps to one thing the user can fix.
 enum MeetBlockReason { bluetoothOff, locationOff, permissionDenied, cannotBroadcast, noBluetooth, notResponding }
 
+/// What the screen animates from: the strongest nearby Throughline phone
+/// (null = none heard) and how far into the hold-still the touch is (0..1).
+class MeetSignal {
+  final int? rssi;
+  final double hold;
+
+  const MeetSignal(this.rssi, this.hold);
+
+  static const none = MeetSignal(null, 0);
+}
+
 class MeetBlocked implements Exception {
   final MeetBlockReason reason;
   const MeetBlocked(this.reason);
@@ -27,18 +38,19 @@ class MeetBlocked implements Exception {
 class MeetProximity {
   final _peripheral = FlutterBlePeripheral();
   final _touches = StreamController<String>.broadcast();
-  final _nearest = StreamController<int?>.broadcast();
+  final _signal = StreamController<MeetSignal>.broadcast();
   final _detector = TouchDetector(prefix: '');
   StreamSubscription<List<ScanResult>>? _scanSub;
-  Timer? _nearestTimer;
+  Timer? _signalTimer;
 
   /// Codes of phones that are touching this one. Repeats about once a
   /// second for as long as the touch lasts.
   Stream<String> get touches => _touches.stream;
 
-  /// Strongest Throughline signal heard in the last 2 s (dBm), or null --
-  /// drives the "getting closer" hint and helps tune the threshold.
-  Stream<int?> get nearestSignal => _nearest.stream;
+  /// About 6 times a second while scanning: strongest Throughline signal
+  /// heard in the last 2 s, and the hold progress -- drives the glow, the
+  /// "getting closer" hint and the fill ring.
+  Stream<MeetSignal> get signal => _signal.stream;
 
   /// Runs one Bluetooth step with a time limit and a log line, so a plugin
   /// call that never answers shows up as "Bluetooth isn't responding" (with
@@ -109,8 +121,8 @@ class MeetProximity {
   Future<void> stop() async {
     await _scanSub?.cancel();
     _scanSub = null;
-    _nearestTimer?.cancel();
-    _nearestTimer = null;
+    _signalTimer?.cancel();
+    _signalTimer = null;
     _detector.clear();
     await _quietly('stop scan', FlutterBluePlus.stopScan);
     await _quietly('stop broadcast', _peripheral.stop);
@@ -119,7 +131,7 @@ class MeetProximity {
   Future<void> dispose() async {
     await stop();
     await _touches.close();
-    await _nearest.close();
+    await _signal.close();
   }
 
   void _apply(MeetSession s) {
@@ -175,7 +187,7 @@ class MeetProximity {
       if (msg.contains('turned on') || msg.contains('adapter')) throw const MeetBlocked(MeetBlockReason.bluetoothOff);
       rethrow;
     }
-    _nearestTimer ??= Timer.periodic(const Duration(milliseconds: 500), (_) => _emitNearest());
+    _signalTimer ??= Timer.periodic(const Duration(milliseconds: 160), (_) => _emitSignal());
   }
 
   void _onResults(List<ScanResult> results) {
@@ -189,7 +201,8 @@ class MeetProximity {
     }
   }
 
-  void _emitNearest() {
-    if (!_nearest.isClosed) _nearest.add(_detector.nearest(DateTime.now()));
+  void _emitSignal() {
+    final now = DateTime.now();
+    if (!_signal.isClosed) _signal.add(MeetSignal(_detector.nearest(now), _detector.holdProgress(now)));
   }
 }

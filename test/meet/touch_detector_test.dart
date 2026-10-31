@@ -65,6 +65,18 @@ void main() {
     });
   });
 
+  test('holdProgress fills while held, resets when pulled apart or silent', () {
+    final d = detector();
+    expect(d.holdProgress(at(0)), 0);
+    d.sample(code, -35, at(0));
+    expect(d.holdProgress(at(400)), closeTo(0.5, 0.01));
+    expect(d.holdProgress(at(1200)), 1.0);
+    d.sample(code, -60, at(1300));
+    expect(d.holdProgress(at(1300)), 0);
+    d.sample(code, -35, at(2000));
+    expect(d.holdProgress(at(4000)), 0); // nothing heard for 2 s
+  });
+
   test('nearest: strongest recent signal, forgets stale phones', () {
     final d = detector();
     d.sample('a' * 24, -70, at(0));

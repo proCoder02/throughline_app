@@ -62,6 +62,20 @@ class TouchDetector {
     return best;
   }
 
+  /// How far into the hold the closest touching phone is, 0..1 -- drives the
+  /// ring that fills while the user holds still. 0 once the signal drops or
+  /// nothing has been heard for 1.5 s.
+  double holdProgress(DateTime now) {
+    var best = 0.0;
+    for (final t in _tracks.values) {
+      final since = t.strongSince;
+      if (since == null || now.difference(t.lastHeard) > const Duration(milliseconds: 1500)) continue;
+      final p = now.difference(since).inMilliseconds / touchFor.inMilliseconds.clamp(1, 1 << 30);
+      if (p > best) best = p;
+    }
+    return best.clamp(0.0, 1.0);
+  }
+
   void clear() => _tracks.clear();
 }
 
