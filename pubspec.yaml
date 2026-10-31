@@ -49,6 +49,9 @@ dependencies:
   # widgets/dissolving_typing_indicator.dart.
   fade_out_particle: ^1.2.1
   flutter_markdown_plus: ^1.0.12
+  flutter_blue_plus: ^2.3.14
+  flutter_ble_peripheral: ^3.1.0
+  device_info_plus: 12.3.0
 
 dev_dependencies:
   flutter_test:

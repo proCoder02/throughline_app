@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../features/meet/meet.dart';
 import '../../models/friend.dart';
 import '../../services/friend_service.dart';
 import '../../services/message_service.dart';
@@ -217,6 +218,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             : null,
         title: const Text('Friends'),
         actions: [
+          if (!_pickingCall) const MeetEntryButton(),
           IconButton(
             icon: Icon(_pickingCall ? Icons.close : Icons.phone_outlined),
             tooltip: _pickingCall ? 'Cancel' : 'Start group call',
