@@ -282,6 +282,38 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Ends the share for both people -- same as Stop sharing in People
+  /// you've met, offered right on the card too.
+  Future<void> _stopSharing() async {
+    final enc = _encounter;
+    if (enc == null || _actionBusy) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Stop sharing with ${enc.other.name}?'),
+        content: const Text("You'll both lose access to each other's cards."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Stop sharing')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _actionBusy = true);
+    try {
+      await _api.remove(enc.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Stopped sharing with ${enc.other.name}.')));
+      _backToSearching();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't stop sharing. Try again.")));
+      }
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
   void _backToSearching() {
     final enc = _encounter;
     if (enc != null) _dismissed.add(enc.id);
@@ -543,6 +575,13 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
           onPressed: _backToSearching,
           style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
           child: const Text('Done'),
+        ),
+        const SizedBox(height: 4),
+        TextButton.icon(
+          onPressed: _actionBusy ? null : _stopSharing,
+          icon: const Icon(Icons.link_off, size: 18),
+          style: TextButton.styleFrom(foregroundColor: AppColors.danger, minimumSize: const Size.fromHeight(44)),
+          label: const Text('Stop sharing'),
         ),
       ],
     );
