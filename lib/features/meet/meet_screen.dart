@@ -126,10 +126,12 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _begin() async {
+    _set(_Phase.loading, message: 'Starting Bluetooth…');
     await _stopRadio();
     try {
       await _proximity.preflight();
-      _session = await _api.startSession();
+      debugPrint('[meet] starting session...');
+      _session = await _api.startSession().timeout(const Duration(seconds: 15));
       await _proximity.start(_session!);
     } on MeetBlocked catch (b) {
       await _stopRadio();
@@ -144,7 +146,12 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
         _set(_Phase.failed, message: "Couldn't start Meet. Check your connection and try again.");
       }
       return;
+    } on TimeoutException {
+      await _stopRadio();
+      _set(_Phase.failed, message: "Couldn't reach Throughline in time. Check your connection and try again.");
+      return;
     } catch (e) {
+      debugPrint('[meet] start failed: $e');
       await _stopRadio();
       _set(_Phase.failed, message: "Couldn't start Bluetooth on this phone.");
       return;
@@ -294,7 +301,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       case MeetBlockReason.bluetoothOff:
         if (Platform.isAndroid) {
           try {
-            await FlutterBluePlus.turnOn();
+            await FlutterBluePlus.turnOn(timeout: 15);
           } catch (_) {}
         }
       case MeetBlockReason.locationOff:
@@ -337,7 +344,19 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   Widget _body() {
     switch (_phase) {
       case _Phase.loading:
-        return const Center(key: ValueKey('loading'), child: CircularProgressIndicator());
+        return Center(
+          key: const ValueKey('loading'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              if (_message != null) ...[
+                const SizedBox(height: 16),
+                Text(_message!, style: TextStyle(color: AppColors.textSoft)),
+              ],
+            ],
+          ),
+        );
       case _Phase.unavailable:
         return const _Notice(
           key: ValueKey('unavailable'),
@@ -402,6 +421,11 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       MeetBlockReason.cannotBroadcast => (
           "This phone can't broadcast",
           "This phone can't send a Bluetooth signal, so other phones won't notice it. Sharing by QR code is coming next.",
+          'Try again'
+        ),
+      MeetBlockReason.notResponding => (
+          "Bluetooth isn't responding",
+          'Bluetooth on this phone took too long to answer. Turning Bluetooth off and on again usually fixes it.',
           'Try again'
         ),
       _ => ("Bluetooth isn't available", "This device doesn't support Bluetooth.", 'Try again'),

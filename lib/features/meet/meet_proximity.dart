@@ -11,7 +11,7 @@ import 'meet_models.dart';
 import 'touch_detector.dart';
 
 /// Why Meet can't run right now -- each maps to one thing the user can fix.
-enum MeetBlockReason { bluetoothOff, locationOff, permissionDenied, cannotBroadcast, noBluetooth }
+enum MeetBlockReason { bluetoothOff, locationOff, permissionDenied, cannotBroadcast, noBluetooth, notResponding }
 
 class MeetBlocked implements Exception {
   final MeetBlockReason reason;
@@ -40,13 +40,39 @@ class MeetProximity {
   /// drives the "getting closer" hint and helps tune the threshold.
   Stream<int?> get nearestSignal => _nearest.stream;
 
+  /// Runs one Bluetooth step with a time limit and a log line, so a plugin
+  /// call that never answers shows up as "Bluetooth isn't responding" (with
+  /// Try again) instead of an endless spinner -- confirmed on a Realme
+  /// Android 11 phone that one of these can hang.
+  Future<T> _step<T>(String name, Future<T> Function() run, Duration limit) async {
+    debugPrint('[meet] $name...');
+    try {
+      final value = await run().timeout(limit);
+      debugPrint('[meet] $name ok');
+      return value;
+    } on TimeoutException {
+      debugPrint('[meet] $name timed out after ${limit.inSeconds}s');
+      throw const MeetBlocked(MeetBlockReason.notResponding);
+    }
+  }
+
+  Future<void> _quietly(String name, Future<void> Function() run) async {
+    try {
+      await run().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('[meet] $name: $e');
+    }
+  }
+
   Future<int> _androidSdk() async =>
       Platform.isAndroid ? (await DeviceInfoPlugin().androidInfo).version.sdkInt : 0;
 
   /// Checks everything Meet needs before starting, in the order the user
   /// would have to fix them. Throws [MeetBlocked].
   Future<void> preflight() async {
-    if (!await FlutterBluePlus.isSupported) throw const MeetBlocked(MeetBlockReason.noBluetooth);
+    if (!await _step('bluetooth supported', () => FlutterBluePlus.isSupported, const Duration(seconds: 5))) {
+      throw const MeetBlocked(MeetBlockReason.noBluetooth);
+    }
     final adapter = await FlutterBluePlus.adapterState
         .where((s) => s != BluetoothAdapterState.unknown)
         .first
@@ -54,10 +80,15 @@ class MeetProximity {
     if (adapter != BluetoothAdapterState.on) throw const MeetBlocked(MeetBlockReason.bluetoothOff);
     // Android 11 and older only report nearby Bluetooth devices to apps
     // while the phone's Location switch is on.
-    if (Platform.isAndroid && await _androidSdk() <= 30 && !await Geolocator.isLocationServiceEnabled()) {
+    final sdk = await _step('android version', _androidSdk, const Duration(seconds: 5));
+    if (Platform.isAndroid &&
+        sdk <= 30 &&
+        !await _step('location on', Geolocator.isLocationServiceEnabled, const Duration(seconds: 5))) {
       throw const MeetBlocked(MeetBlockReason.locationOff);
     }
-    final perm = await _peripheral.requestPermission();
+    // Long limit: this may be waiting on the user answering a permission prompt.
+    final perm = await _step('permission', _peripheral.requestPermission, const Duration(seconds: 60));
+    debugPrint('[meet] permission state: $perm');
     if (perm != PeripheralBluetoothState.granted && perm != PeripheralBluetoothState.ready) {
       throw const MeetBlocked(MeetBlockReason.permissionDenied);
     }
@@ -81,12 +112,8 @@ class MeetProximity {
     _nearestTimer?.cancel();
     _nearestTimer = null;
     _detector.clear();
-    try {
-      await FlutterBluePlus.stopScan();
-    } catch (_) {}
-    try {
-      await _peripheral.stop();
-    } catch (_) {}
+    await _quietly('stop scan', FlutterBluePlus.stopScan);
+    await _quietly('stop broadcast', _peripheral.stop);
   }
 
   Future<void> dispose() async {
@@ -103,16 +130,21 @@ class MeetProximity {
   }
 
   Future<void> _advertise(String serviceUuid) async {
+    await _quietly('stop broadcast', _peripheral.stop);
     try {
-      await _peripheral.stop();
-    } catch (_) {}
-    try {
-      await _peripheral.start(
-        advertiseData: AdvertiseDataCore(serviceUuid: serviceUuid),
-        androidSettings: const AndroidAdvertiseSettings(
-          advertiseSettings: AdvertiseSettings(connectable: false, timeout: 0),
+      final state = await _step(
+        'start broadcast',
+        () => _peripheral.start(
+          advertiseData: AdvertiseDataCore(serviceUuid: serviceUuid),
+          androidSettings: const AndroidAdvertiseSettings(
+            advertiseSettings: AdvertiseSettings(connectable: false, timeout: 0),
+          ),
         ),
+        const Duration(seconds: 8),
       );
+      debugPrint('[meet] broadcast state: $state');
+    } on MeetBlocked {
+      rethrow;
     } catch (e) {
       // Some budget phones can scan but not broadcast.
       debugPrint('[meet] advertise failed: $e');
@@ -124,11 +156,17 @@ class MeetProximity {
     await _scanSub?.cancel();
     _scanSub = FlutterBluePlus.onScanResults.listen(_onResults, onError: (e) => debugPrint('[meet] scan error: $e'));
     try {
-      await FlutterBluePlus.startScan(
-        continuousUpdates: true,
-        androidScanMode: AndroidScanMode.lowLatency,
-        androidCheckLocationServices: false, // checked in preflight(), only where Android needs it
+      await _step(
+        'start scan',
+        () => FlutterBluePlus.startScan(
+          continuousUpdates: true,
+          androidScanMode: AndroidScanMode.lowLatency,
+          androidCheckLocationServices: false, // checked in preflight(), only where Android needs it
+        ),
+        const Duration(seconds: 10),
       );
+    } on MeetBlocked {
+      rethrow;
     } catch (e) {
       debugPrint('[meet] scan failed: $e');
       final msg = e.toString().toLowerCase();
