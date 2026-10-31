@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -13,6 +12,7 @@ import 'meet_animations.dart';
 import 'meet_api.dart';
 import 'meet_card_editor.dart';
 import 'meet_card_view.dart';
+import 'meet_haptics.dart';
 import 'meet_history_screen.dart';
 import 'meet_models.dart';
 import 'meet_proximity.dart';
@@ -58,7 +58,10 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     _signalSub = _proximity.signal.listen((v) {
       if (!mounted) return;
       // A light tick the moment another phone comes into range.
-      if (_signal.rssi == null && v.rssi != null && _phase == _Phase.searching) HapticFeedback.selectionClick();
+      if (_phase == _Phase.searching) {
+        if (_signal.rssi == null && v.rssi != null) MeetHaptics.detected();
+        if (_signal.hold < 1 && v.hold >= 1) MeetHaptics.touched();
+      }
       if (v.rssi != _signal.rssi || (v.hold - _signal.hold).abs() > 0.01) setState(() => _signal = v);
     });
     _load();
@@ -194,7 +197,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
         case 'matched':
           final enc = r.encounter;
           if (enc == null || _dismissed.contains(enc.id) || _phase != _Phase.searching) break;
-          HapticFeedback.mediumImpact();
+          MeetHaptics.matched();
           _encounter = enc;
           _set(enc.isShared ? _Phase.shared : _Phase.confirming);
           _startPolling();
@@ -225,7 +228,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
       setState(() => _encounter = next);
       if (next.isShared) {
         _pollTimer?.cancel();
-        if (_phase != _Phase.shared) HapticFeedback.heavyImpact();
+        if (_phase != _Phase.shared) MeetHaptics.revealed();
         _set(_Phase.shared);
       } else if (next.isFinished) {
         _pollTimer?.cancel();
@@ -255,7 +258,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
         _backToSearching();
       } else if (next.isShared) {
         _pollTimer?.cancel();
-        HapticFeedback.heavyImpact();
+        MeetHaptics.revealed();
         _set(_Phase.shared);
       } else {
         _set(_Phase.waitingForThem);
