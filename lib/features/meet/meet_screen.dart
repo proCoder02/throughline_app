@@ -192,6 +192,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     if (_phase != _Phase.searching || _reporting || session == null) return;
     _reporting = true;
     try {
+      debugPrint('[meet] touch at ${_signal.rssi} dBm (threshold ${session.rssiThreshold})');
       final r = await _api.reportTouch(myCode: session.code, seenCode: seenCode);
       switch (r.status) {
         case 'matched':
@@ -488,41 +489,41 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     final threshold = _session?.rssiThreshold ?? -40;
     final near = _signal.rssi;
     final hint = near == null
-        ? 'Looking for another phone with Meet open…'
+        ? 'Looking for a phone with Meet open…'
         : near >= threshold
             ? 'Hold still…'
-            : 'Found a phone -- bring them closer';
-    return ListView(
+            : 'Bring them closer';
+    // One focal point (the orb), one title, one live status line. The card
+    // itself is one tap away (app bar), and the signal number only goes to
+    // the log -- it's for tuning, not for the person meeting someone.
+    return Center(
       key: const ValueKey('searching'),
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-      children: [
-        const SizedBox(height: 12),
-        ProximityOrb(level: signalLevel(near, threshold), hold: _signal.hold),
-        const SizedBox(height: 28),
-        Text('Hold your phones together',
-            textAlign: TextAlign.center, style: appHeadlineFont(color: AppColors.text, fontSize: 24)),
-        const SizedBox(height: 10),
-        Text(
-          'Keep Meet open on both phones and bring them back to back. Your card is shared only if you both tap Share.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSoft, height: 1.4),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ProximityOrb(level: signalLevel(near, threshold), hold: _signal.hold),
+            const SizedBox(height: 28),
+            Text('Hold your phones together',
+                textAlign: TextAlign.center, style: appHeadlineFont(color: AppColors.text, fontSize: 24)),
+            const SizedBox(height: 12),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Text(hint,
+                  key: ValueKey(hint),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSoft, fontSize: 15)),
+            ),
+            const SizedBox(height: 40),
+            Text(
+              'Only shared if you both tap Share',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSoft, fontSize: 12),
+            ),
+          ],
         ),
-        const SizedBox(height: 20),
-        Text(hint, textAlign: TextAlign.center, style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Text(
-          near == null ? 'Signal: none yet' : 'Signal: $near dBm (touch at $threshold)',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSoft, fontSize: 12, fontFeatures: const [FontFeature.tabularFigures()]),
-        ),
-        if (_mine != null) ...[
-          const SizedBox(height: 32),
-          Text('YOUR CARD',
-              style: TextStyle(color: AppColors.textSoft, fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          MeetCardView(card: _mine!.card, person: _mine!.me),
-        ],
-      ],
+      ),
     );
   }
 
