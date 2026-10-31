@@ -37,15 +37,15 @@ class MeetBlocked implements Exception {
 /// and it changes every few minutes (see MeetSession.rotateAfter).
 class MeetProximity {
   final _peripheral = FlutterBlePeripheral();
-  final _touches = StreamController<String>.broadcast();
+  final _touches = StreamController<MeetTouch>.broadcast();
   final _signal = StreamController<MeetSignal>.broadcast();
   final _detector = TouchDetector(prefix: '');
   StreamSubscription<List<ScanResult>>? _scanSub;
   Timer? _signalTimer;
 
-  /// Codes of phones that are touching this one. Repeats about once a
-  /// second for as long as the touch lasts.
-  Stream<String> get touches => _touches.stream;
+  /// Phones touching this one (code + measured signal). Repeats about once
+  /// a second for as long as the touch lasts.
+  Stream<MeetTouch> get touches => _touches.stream;
 
   /// About 6 times a second while scanning: strongest Throughline signal
   /// heard in the last 2 s, and the hold progress -- drives the glow, the
@@ -78,6 +78,18 @@ class MeetProximity {
 
   Future<int> _androidSdk() async =>
       Platform.isAndroid ? (await DeviceInfoPlugin().androidInfo).version.sdkInt : 0;
+
+  /// True when Bluetooth permission is already granted -- lets the screen
+  /// explain why it's needed *before* Android's prompt, only when it would
+  /// actually appear.
+  Future<bool> permissionGranted() async {
+    try {
+      final state = await _peripheral.hasPermission().timeout(const Duration(seconds: 5));
+      return state == PeripheralBluetoothState.granted || state == PeripheralBluetoothState.ready;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Checks everything Meet needs before starting, in the order the user
   /// would have to fix them. Throws [MeetBlocked].
@@ -196,7 +208,7 @@ class MeetProximity {
         final code = TouchDetector.codeFromUuid(uuid.str128, _detector.prefix);
         if (code == null) continue;
         final touched = _detector.sample(code, r.rssi, DateTime.now(), sampleId: r.timeStamp);
-        if (touched != null && !_touches.isClosed) _touches.add(touched);
+        if (touched != null && !_touches.isClosed) _touches.add(MeetTouch(touched, r.rssi));
       }
     }
   }

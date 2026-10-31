@@ -93,8 +93,12 @@ class MeetEncounter {
   final MeetCard? card;
   final bool cardHidden;
   final DateTime? createdAt;
+  final String method; // bluetooth | qr
+  /// While pending: seconds left to tap Share, as of [receivedAt].
+  final int? expiresIn;
+  final DateTime receivedAt;
 
-  const MeetEncounter({
+  MeetEncounter({
     required this.id,
     required this.status,
     required this.other,
@@ -103,7 +107,10 @@ class MeetEncounter {
     this.card,
     this.cardHidden = false,
     this.createdAt,
-  });
+    this.method = 'bluetooth',
+    this.expiresIn,
+    DateTime? receivedAt,
+  }) : receivedAt = receivedAt ?? DateTime.now();
 
   factory MeetEncounter.fromJson(Map<String, dynamic> j) => MeetEncounter(
         id: j['id'] as int,
@@ -114,16 +121,50 @@ class MeetEncounter {
         card: j['card'] is Map ? MeetCard.fromJson((j['card'] as Map).cast<String, dynamic>()) : null,
         cardHidden: (j['card_hidden'] as bool?) ?? false,
         createdAt: DateTime.tryParse((j['created_at'] as String?) ?? ''),
+        method: (j['method'] as String?) ?? 'bluetooth',
+        expiresIn: (j['expires_in'] as num?)?.toInt(),
       );
+
+  /// Seconds left to tap Share right now, counted on the server's clock.
+  int? secondsLeft([DateTime? now]) {
+    final e = expiresIn;
+    if (e == null) return null;
+    final gone = (now ?? DateTime.now()).difference(receivedAt).inSeconds;
+    return (e - gone).clamp(0, e);
+  }
 
   bool get isPending => status == 'pending';
   bool get isShared => status == 'shared';
   bool get isFinished => !isPending;
 }
 
-/// Result of reporting "I'm touching code X".
+/// A touch seen by this phone: the other phone's code and how strong its
+/// signal was (sent to the server, which checks both sides).
+class MeetTouch {
+  final String code;
+  final int rssi;
+
+  const MeetTouch(this.code, this.rssi);
+}
+
+/// An on-screen QR code for the QR fallback.
+class MeetQr {
+  final String token;
+  final String payload;
+  final Duration expiresIn;
+
+  const MeetQr({required this.token, required this.payload, required this.expiresIn});
+
+  factory MeetQr.fromJson(Map<String, dynamic> j) => MeetQr(
+        token: j['token'] as String,
+        payload: j['payload'] as String,
+        expiresIn: Duration(seconds: (j['expires_in'] as num?)?.toInt() ?? 120),
+      );
+}
+
+/// Result of reporting "I'm touching code X" (or scanning a QR code).
 class MeetSighting {
-  final String status; // waiting | matched | unknown | invalid | limited
+  final String status; // waiting | matched | too_far | unknown | invalid | limited | expired
   final MeetEncounter? encounter;
   final String? error;
 

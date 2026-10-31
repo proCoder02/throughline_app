@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
@@ -16,8 +17,12 @@ import 'meet_haptics.dart';
 import 'meet_history_screen.dart';
 import 'meet_models.dart';
 import 'meet_proximity.dart';
+import 'meet_qr_screen.dart';
 
-enum _Phase { loading, unavailable, needsCard, blocked, searching, confirming, waitingForThem, shared, ended, failed }
+enum _Phase { loading, unavailable, needsCard, primer, blocked, searching, paused, confirming, waitingForThem, shared, ended, failed }
+
+/// No one nearby for this long -> stop Bluetooth and ask "Still looking?".
+const _idleLimit = Duration(minutes: 3);
 
 /// Hold two phones together -> both people see "Share your card with X?"
 /// -> once both tap Share, each sees the other's card.
@@ -44,20 +49,27 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   bool _reporting = false;
   bool _actionBusy = false;
   final Set<int> _dismissed = {}; // encounters already finished on this screen
+  bool _primerSeen = false; // explained Bluetooth before Android's prompt
+  DateTime _lastActivity = DateTime.now(); // last time another phone was heard (or searching began)
 
-  StreamSubscription<String>? _touchSub;
+  StreamSubscription<MeetTouch>? _touchSub;
   StreamSubscription<MeetSignal>? _signalSub;
   Timer? _rotateTimer;
   Timer? _pollTimer;
+  Timer? _idleTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // A sleeping screen stops Bluetooth and the touch silently fails, so
+    // Meet keeps the screen on while it's open.
+    WakelockPlus.enable();
     _touchSub = _proximity.touches.listen(_onTouch);
     _signalSub = _proximity.signal.listen((v) {
       if (!mounted) return;
       // A light tick the moment another phone comes into range.
+      if (v.rssi != null) _lastActivity = DateTime.now();
       if (_phase == _Phase.searching) {
         if (_signal.rssi == null && v.rssi != null) MeetHaptics.detected();
         if (_signal.hold < 1 && v.hold >= 1) MeetHaptics.touched();
@@ -72,6 +84,8 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _rotateTimer?.cancel();
     _pollTimer?.cancel();
+    _idleTimer?.cancel();
+    WakelockPlus.disable();
     _touchSub?.cancel();
     _signalSub?.cancel();
     _proximity.dispose();
@@ -81,8 +95,12 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      WakelockPlus.disable();
       _stopRadio();
-    } else if (state == AppLifecycleState.resumed && (_phase == _Phase.searching || _phase == _Phase.blocked)) {
+    } else if (state == AppLifecycleState.resumed) {
+      WakelockPlus.enable();
+    }
+    if (state == AppLifecycleState.resumed && (_phase == _Phase.searching || _phase == _Phase.blocked)) {
       _begin();
     }
   }
@@ -133,6 +151,12 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _begin() async {
+    // Say why Bluetooth is needed BEFORE Android asks -- only when the
+    // prompt would actually appear.
+    if (!_primerSeen && !await _proximity.permissionGranted()) {
+      _set(_Phase.primer);
+      return;
+    }
     _set(_Phase.loading, message: 'Starting Bluetooth…');
     await _stopRadio();
     try {
@@ -165,7 +189,41 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
     }
     _rotateTimer?.cancel();
     _rotateTimer = Timer.periodic(_session!.rotateAfter, (_) => _rotate());
+    _lastActivity = DateTime.now();
+    _idleTimer?.cancel();
+    _idleTimer = Timer.periodic(const Duration(seconds: 10), (_) => _checkIdle());
     _set(_Phase.searching);
+  }
+
+  /// Saves battery (and stops broadcasting from someone's pocket) when no
+  /// one has been nearby for a while.
+  Future<void> _checkIdle() async {
+    if (_phase != _Phase.searching || DateTime.now().difference(_lastActivity) < _idleLimit) return;
+    await _stopRadio();
+    _set(_Phase.paused);
+  }
+
+  void _primerContinue() {
+    _primerSeen = true;
+    _begin();
+  }
+
+  /// QR fallback -- Bluetooth is paused while the QR screen is open.
+  Future<void> _openQr() async {
+    await _stopRadio();
+    if (!mounted) return;
+    final enc = await Navigator.of(context).push<MeetEncounter>(
+      MaterialPageRoute(builder: (_) => const MeetQrScreen()),
+    );
+    if (!mounted) return;
+    if (enc != null && !_dismissed.contains(enc.id)) {
+      MeetHaptics.matched();
+      _encounter = enc;
+      _set(enc.isShared ? _Phase.shared : _Phase.confirming);
+      _startPolling();
+    } else {
+      _begin();
+    }
   }
 
   Future<void> _rotate() async {
@@ -181,19 +239,21 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   Future<void> _stopRadio() async {
     _rotateTimer?.cancel();
     _rotateTimer = null;
+    _idleTimer?.cancel();
+    _idleTimer = null;
     await _proximity.stop();
     if (mounted && _signal.rssi != null) setState(() => _signal = MeetSignal.none);
   }
 
   // ---- touching ----
 
-  Future<void> _onTouch(String seenCode) async {
+  Future<void> _onTouch(MeetTouch touch) async {
     final session = _session;
     if (_phase != _Phase.searching || _reporting || session == null) return;
     _reporting = true;
     try {
-      debugPrint('[meet] touch at ${_signal.rssi} dBm (threshold ${session.rssiThreshold})');
-      final r = await _api.reportTouch(myCode: session.code, seenCode: seenCode);
+      debugPrint('[meet] touch at ${touch.rssi} dBm (threshold ${session.rssiThreshold})');
+      final r = await _api.reportTouch(myCode: session.code, touch: touch);
       switch (r.status) {
         case 'matched':
           final enc = r.encounter;
@@ -436,10 +496,31 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
           action: _mine?.saved == true ? 'Edit card' : 'Set up my card',
           onAction: _editCard,
         );
+      case _Phase.primer:
+        return _Notice(
+          key: const ValueKey('primer'),
+          icon: Icons.contactless_outlined,
+          title: 'Meet uses Bluetooth',
+          body: 'To notice when your phone touches theirs. Only a random code that changes every few minutes is sent -- '
+              'never your name, your details or where you are. Android will ask for permission next.',
+          action: 'Continue',
+          onAction: _primerContinue,
+        );
       case _Phase.blocked:
         return _blockedNotice();
       case _Phase.searching:
         return _searching();
+      case _Phase.paused:
+        return _Notice(
+          key: const ValueKey('paused'),
+          icon: Icons.pause_circle_outline,
+          title: 'Still looking?',
+          body: 'No one was nearby for a few minutes, so Meet paused to save battery.',
+          action: 'Keep looking',
+          onAction: _begin,
+          secondary: 'Use a QR code instead',
+          onSecondary: _openQr,
+        );
       case _Phase.confirming:
       case _Phase.waitingForThem:
         return _confirm();
@@ -472,7 +553,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
         ),
       MeetBlockReason.cannotBroadcast => (
           "This phone can't broadcast",
-          "This phone can't send a Bluetooth signal, so other phones won't notice it. Sharing by QR code is coming next.",
+          "This phone can't send a Bluetooth signal, so other phones won't notice it. Use a QR code instead.",
           'Try again'
         ),
       MeetBlockReason.notResponding => (
@@ -482,7 +563,16 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
         ),
       _ => ("Bluetooth isn't available", "This device doesn't support Bluetooth.", 'Try again'),
     };
-    return _Notice(key: const ValueKey('blocked'), icon: Icons.bluetooth_disabled, title: title, body: body, action: action, onAction: _fixBlocked);
+    return _Notice(
+      key: const ValueKey('blocked'),
+      icon: Icons.bluetooth_disabled,
+      title: title,
+      body: body,
+      action: action,
+      onAction: _fixBlocked,
+      secondary: 'Use a QR code instead',
+      onSecondary: _openQr,
+    );
   }
 
   Widget _searching() {
@@ -516,6 +606,12 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
                   style: TextStyle(color: AppColors.textSoft, fontSize: 15)),
             ),
             const SizedBox(height: 40),
+            TextButton.icon(
+              onPressed: _openQr,
+              icon: const Icon(Icons.qr_code_2, size: 18),
+              label: const Text('Use a QR code instead'),
+            ),
+            const SizedBox(height: 4),
             Text(
               'Only shared if you both tap Share',
               textAlign: TextAlign.center,
@@ -530,6 +626,7 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
   Widget _confirm() {
     final enc = _encounter!;
     final waiting = _phase == _Phase.waitingForThem;
+    final left = enc.secondsLeft();
     return ListView(
       key: const ValueKey('confirm'),
       padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
@@ -551,6 +648,19 @@ class _MeetScreenState extends State<MeetScreen> with WidgetsBindingObserver {
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.textSoft, height: 1.4),
         ),
+        if (left != null) ...[
+          const SizedBox(height: 14),
+          Text(
+            left > 0 ? '${left}s left to share' : 'Time is up',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: left <= 15 ? AppColors.danger : AppColors.textSoft,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
         const SizedBox(height: 28),
         if (waiting)
           const Center(child: CircularProgressIndicator())
@@ -617,8 +727,19 @@ class _Notice extends StatelessWidget {
   final String body;
   final String? action;
   final VoidCallback? onAction;
+  final String? secondary;
+  final VoidCallback? onSecondary;
 
-  const _Notice({super.key, required this.icon, required this.title, required this.body, this.action, this.onAction});
+  const _Notice({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.action,
+    this.onAction,
+    this.secondary,
+    this.onSecondary,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -640,6 +761,10 @@ class _Notice extends StatelessWidget {
                 style: FilledButton.styleFrom(backgroundColor: AppColors.accent),
                 child: Text(action!),
               ),
+            ],
+            if (secondary != null) ...[
+              const SizedBox(height: 8),
+              TextButton(onPressed: onSecondary, child: Text(secondary!)),
             ],
           ],
         ),

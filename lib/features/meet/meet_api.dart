@@ -31,11 +31,14 @@ class MeetApi {
 
   Future<MeetSession> startSession() async => MeetSession.fromJson(_json(await _api.dio.post('/meet/session')));
 
-  Future<MeetSighting> reportTouch({required String myCode, required String seenCode}) async {
+  Future<MeetSighting> reportTouch({required String myCode, required MeetTouch touch}) =>
+      _sighting(() => _api.dio.post('/meet/encounter', data: {'code': myCode, 'seen_code': touch.code, 'rssi': touch.rssi}));
+
+  Future<MeetSighting> _sighting(Future<Response> Function() send) async {
     try {
-      final j = _json(await _api.dio.post('/meet/encounter', data: {'code': myCode, 'seen_code': seenCode}));
+      final j = _json(await send());
       final enc = j['encounter'] is Map ? MeetEncounter.fromJson((j['encounter'] as Map).cast<String, dynamic>()) : null;
-      return MeetSighting(j['status'] as String, encounter: enc);
+      return MeetSighting(j['status'] as String, encounter: enc, error: j['error'] as String?);
     } on DioException catch (e) {
       final data = e.response?.data;
       if (data is Map && data['status'] is String) {
@@ -44,6 +47,15 @@ class MeetApi {
       rethrow;
     }
   }
+
+  // ---- QR fallback ----
+
+  Future<MeetQr> startQr() async => MeetQr.fromJson(_json(await _api.dio.post('/meet/qr')));
+
+  /// For the phone showing the code: the encounter once someone scans it.
+  Future<MeetSighting> qrStatus(String token) => _sighting(() => _api.dio.get('/meet/qr/$token'));
+
+  Future<MeetSighting> scanQr(String payload) => _sighting(() => _api.dio.post('/meet/qr/scan', data: {'payload': payload}));
 
   Future<MeetEncounter> encounter(int id) async => MeetEncounter.fromJson(_json(await _api.dio.get('/meet/encounter/$id')));
 
