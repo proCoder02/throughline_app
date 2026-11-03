@@ -14,6 +14,7 @@ import '../../services/conversation_service.dart';
 import '../../services/home_signals_service.dart';
 import '../../services/mail_service.dart';
 import '../../theme.dart';
+import '../../utils/followup_hint.dart';
 import '../../widgets/chat_list_skeleton.dart';
 import '../../widgets/dissolving_typing_indicator.dart';
 import '../../widgets/glowing_border.dart';
@@ -457,7 +458,10 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
           role: 'assistant', content: reply, createdAt: DateTime.now(), actionCards: actionCards, replyMeta: replyMeta);
       // A reply that couldn't reach the mailbox means the saved Microsoft
       // sign-in just went stale -- refresh so Settings/chips reflect it.
-      if (replyMeta != null) unawaited(MailStatus.refresh());
+      // (reply_meta can also carry just "understood_as" -- not a mail reply.)
+      if (replyMeta != null && (replyMeta.containsKey('tool_activity') || replyMeta.containsKey('mail_sources'))) {
+        unawaited(MailStatus.refresh());
+      }
       // Not appended to _messages yet -- see _pendingReply's doc comment.
       // The typing row's index must not move in this same setState, or the
       // dissolve never actually plays on it.
@@ -844,7 +848,11 @@ class GlobalChatBodyState extends State<GlobalChatBody> {
                       itemBuilder: (context, i) {
                         if (i == _messages.length) {
                           return DissolvingTypingIndicator(
-                            label: MailStatus.pendingLabel(_pendingText),
+                            label: MailStatus.pendingLabel(_pendingText) ??
+                                (looksLikeFollowUp(_pendingText,
+                                        hasEarlierReplies: _messages.any((m) => m.role == 'assistant'))
+                                    ? followUpPendingLabel
+                                    : null),
                             disappear: _typingDissolving,
                             onDissolved: () {
                               if (!mounted) return;

@@ -38,7 +38,11 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
   Widget build(BuildContext context) {
     final activity = _list('tool_activity');
     final sources = _list('mail_sources');
-    if (activity.isEmpty && sources.isEmpty) return const SizedBox.shrink();
+    // How a follow-up ("and what did he say?") was read -- set by the
+    // server's follow-up resolver only when it rewrote the question.
+    final rawUnderstood = widget.meta['understood_as'];
+    final understood = rawUnderstood is String ? rawUnderstood.trim() : '';
+    if (activity.isEmpty && sources.isEmpty && understood.isEmpty) return const SizedBox.shrink();
     final shown = _expanded ? sources : sources.take(_visibleSources).toList();
 
     return Container(
@@ -49,6 +53,7 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (understood.isNotEmpty) _UnderstoodLine(text: understood),
           for (final a in activity)
             _ActivityLine(
                 activity: a, onReconnect: () => _reconnect(MailProvider.of(a['provider']), a['account'] as String?)),
@@ -75,6 +80,41 @@ class _MailReplyMetaState extends State<MailReplyMeta> {
               ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// "Understood as: …" -- quieter than the activity lines: it's a check for
+/// the reader, not an action.
+class _UnderstoodLine extends StatelessWidget {
+  final String text;
+
+  const _UnderstoodLine({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Understood your follow-up as: $text',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.subdirectory_arrow_right_rounded, size: 15, color: AppColors.dmTextSoft),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text.rich(
+                TextSpan(children: [
+                  const TextSpan(text: 'Understood as: ', style: TextStyle(fontStyle: FontStyle.italic)),
+                  TextSpan(text: '“$text”', style: TextStyle(color: AppColors.dmText)),
+                ]),
+                style: TextStyle(color: AppColors.dmTextSoft, fontSize: 12.5, height: 1.35),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
