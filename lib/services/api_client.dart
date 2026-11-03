@@ -45,7 +45,21 @@ class ApiClient {
     await cacheTokenForNative(token, ApiConfig.baseUrl);
   }
 
-  Future<String?> readToken() => _storage.read(key: 'token');
+  /// A stored token Android can no longer decrypt (BadPaddingException after
+  /// a backup restore or keystore reset -- seen on a Realme GT, Android 16)
+  /// is treated as logged out: wipe it so the user just signs in again,
+  /// instead of startup throwing and the app never leaving the splash.
+  Future<String?> readToken() async {
+    try {
+      return await _storage.read(key: 'token');
+    } catch (e) {
+      debugPrint('readToken: stored token unreadable, resetting ($e)');
+      try {
+        await _storage.deleteAll();
+      } catch (_) {}
+      return null;
+    }
+  }
 
   Future<void> clearToken() async {
     await _storage.delete(key: 'token');
