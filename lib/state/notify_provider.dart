@@ -266,8 +266,14 @@ class NotifyProvider extends ChangeNotifier {
             // Suppressed entirely (not just silenced) when this friend's
             // thread is the one currently open, matching WhatsApp/Telegram
             // not notifying you about the chat you're already looking at.
-            final senderName = event['sender_username'] as String? ?? 'New message';
-            unawaited(showLocalNotification(senderName, message.content));
+            // Skipped for a message replayed on reconnect (older than a
+            // minute): FCM already showed it while the app was closed, so a
+            // second heads-up for the same message would be a duplicate.
+            final age = DateTime.now().toUtc().difference(message.createdAt.toUtc());
+            if (age < const Duration(minutes: 1)) {
+              final senderName = event['sender_username'] as String? ?? 'New message';
+              unawaited(showLocalNotification(senderName, message.content));
+            }
           }
           notifyListeners();
         }

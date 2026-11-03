@@ -175,7 +175,11 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> with SingleTi
         final deliveredSet = deliveredIds.toSet();
         updated = updated.map((m) => deliveredSet.contains(m.id) ? m.copyWith(deliveredAt: DateTime.now()) : m).toList();
       }
-      _messages = [...updated, ...incoming];
+      // Messages that arrived while this thread was closed sit in the
+      // pending queue AND come back with the history load on open --
+      // confirmed live that appending them blindly showed them twice.
+      final known = updated.map((m) => m.id).toSet();
+      _messages = [...updated, ...incoming.where((m) => known.add(m.id))];
     });
     if (incoming.isNotEmpty) {
       _markRead(); // arrived while the thread was already open -- read immediately
