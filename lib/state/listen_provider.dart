@@ -5,6 +5,7 @@ import 'package:record/record.dart';
 
 import '../models/speaker.dart';
 import '../services/api_client.dart';
+import '../services/consent_service.dart';
 import '../services/listen_socket.dart';
 import '../services/speaker_service.dart';
 
@@ -59,6 +60,9 @@ class ListenProvider extends ChangeNotifier {
 
   Future<void> start({int? resumeConversationId, void Function(int conversationId)? onSessionStarted}) async {
     if (isListening) return;
+    // One-time recording notice (services/consent_service.dart); cancelling
+    // it means nothing is recorded.
+    if (!await ConsentService.instance.ensureRecordingNotice()) return;
     if (!await _recorder.hasPermission()) {
       status = 'Error: microphone permission denied';
       notifyListeners();

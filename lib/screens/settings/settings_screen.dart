@@ -11,6 +11,7 @@ import '../../main.dart' show themeProvider;
 import '../../models/category.dart';
 import '../../services/category_service.dart';
 import '../../services/commerce_service.dart';
+import '../../services/consent_service.dart' show openLegalPage;
 import '../../services/mail_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/upload_service.dart';
@@ -19,6 +20,7 @@ import '../../state/theme_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/category_menu.dart';
+import '../../widgets/delete_account_dialog.dart';
 import '../../widgets/island_nav_bar.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/photo_viewer.dart';
@@ -232,6 +234,27 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   }
 
   /// One linked mailbox: address, state, and its own Reconnect/Disconnect.
+  Widget _legalRow(IconData icon, String label, VoidCallback onTap, {bool danger = false}) {
+    final color = danger ? AppColors.danger : AppColors.dmAccent;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label, style: TextStyle(fontSize: 15, color: danger ? AppColors.danger : null)),
+            ),
+            Icon(danger ? Icons.chevron_right : Icons.open_in_new, size: 18, color: AppColors.dmTextSoft),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _mailAccountRow(MailProvider provider, Map<String, dynamic> account, ButtonStyle accent, TextStyle soft) {
     final broken = account['needs_reconnect'] == true;
     final email = account['email'] as String?;
@@ -879,6 +902,21 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                         ),
                       ),
                     ),
+                  ],
+                ),
+                SettingsStyleCard(
+                  title: 'Privacy & account',
+                  children: [
+                    _legalRow(Icons.privacy_tip_outlined, 'Privacy Policy', () => openLegalPage('/privacy')),
+                    _legalRow(Icons.description_outlined, 'Terms of Service', () => openLegalPage('/terms')),
+                    _legalRow(Icons.delete_forever_outlined, 'Delete account', () async {
+                      final deleted = await showDeleteAccountDialog(context);
+                      if (!deleted || !context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Your account and its data have been deleted.')),
+                      );
+                      await context.read<AuthProvider>().logout();
+                    }, danger: true),
                   ],
                 ),
                 const SizedBox(height: 8),

@@ -9,6 +9,7 @@ import 'package:record/record.dart';
 import '../main.dart' show authProvider;
 import '../models/call.dart';
 import '../services/call_service.dart';
+import '../services/consent_service.dart';
 import '../services/push_service.dart' show markCallFinishedNative;
 
 enum CallStatus { idle, connecting, active }
@@ -63,7 +64,11 @@ class CallProvider extends ChangeNotifier {
   // participant's identity.
   String? _initiatorIdentity;
 
+  // Calls are recorded and transcribed: the one-time recording notice comes
+  // first. Cancelling it means the call isn't placed -- or, for an incoming
+  // call, that it's declined rather than left ringing.
   Future<void> startCall(List<int> friendIds) async {
+    if (!await ConsentService.instance.ensureRecordingNotice()) return;
     _initiatorIdentity = authProvider.userId?.toString();
     // Flip out of idle before the network round-trip below, not after --
     // CallOverlay treats status == idle as "no active/joining call" and
@@ -82,6 +87,7 @@ class CallProvider extends ChangeNotifier {
   /// from the join info the chat response carried instead of re-POSTing
   /// /calls like startCall does.
   Future<void> startFromActionCard(Map<String, dynamic> card) async {
+    if (!await ConsentService.instance.ensureRecordingNotice()) return;
     _initiatorIdentity = authProvider.userId?.toString();
     status = CallStatus.connecting;
     notifyListeners();
@@ -89,6 +95,12 @@ class CallProvider extends ChangeNotifier {
   }
 
   Future<void> joinCall(int callId, {required int callerId}) async {
+    if (!await ConsentService.instance.ensureRecordingNotice()) {
+      try {
+        await declineCall(callId);
+      } catch (_) {}
+      return;
+    }
     _initiatorIdentity = callerId.toString();
     status = CallStatus.connecting;
     notifyListeners();

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/auth_provider.dart';
 import '../state/theme_provider.dart';
+import '../services/consent_service.dart';
 import '../theme.dart';
 import '../widgets/category_menu.dart';
 
@@ -18,12 +19,17 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _submitting = false;
   String? _error;
   String _personalization = 'personal';
+  bool _agreed = false;
 
   final _username = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
 
   Future<void> _submit() async {
+    if (_isRegister && !_agreed) {
+      setState(() => _error = 'Please agree to the Terms of Service and Privacy Policy.');
+      return;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -35,6 +41,7 @@ class _AuthScreenState extends State<AuthScreen> {
             email: _email.text.trim(),
             password: _password.text,
             personalization: _personalization,
+            acceptedTerms: _agreed,
           )
         : await auth.login(_username.text.trim(), _password.text);
     if (!mounted) return;
@@ -131,6 +138,35 @@ class _AuthScreenState extends State<AuthScreen> {
                         onChanged: (v) => setState(() => _personalization = v ?? 'personal'),
                       ),
                     ],
+                    if (_isRegister) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: _agreed,
+                            activeColor: AppColors.dmAccent,
+                            onChanged: _submitting ? null : (v) => setState(() => _agreed = v ?? false),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text('I agree to the ', style: TextStyle(color: AppColors.dmTextSoft)),
+                                  _LegalLink(label: 'Terms', path: '/terms'),
+                                  Text(' and ', style: TextStyle(color: AppColors.dmTextSoft)),
+                                  _LegalLink(label: 'Privacy Policy', path: '/privacy'),
+                                  Text(", and I'll tell people before I record them.",
+                                      style: TextStyle(color: AppColors.dmTextSoft)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       Text(_error!, style: const TextStyle(color: AppColors.danger)),
@@ -156,12 +192,38 @@ class _AuthScreenState extends State<AuthScreen> {
                       style: TextButton.styleFrom(foregroundColor: AppColors.dmAccent),
                       child: Text(_isRegister ? 'Already have an account? Log in' : "Don't have an account? Register"),
                     ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        _LegalLink(label: 'Privacy', path: '/privacy'),
+                        SizedBox(width: 16),
+                        _LegalLink(label: 'Terms', path: '/terms'),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LegalLink extends StatelessWidget {
+  const _LegalLink({required this.label, required this.path});
+  final String label;
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => openLegalPage(path),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Text(label,
+            style: TextStyle(color: AppColors.dmAccent, fontWeight: FontWeight.w600, decoration: TextDecoration.underline)),
       ),
     );
   }

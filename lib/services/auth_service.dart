@@ -8,12 +8,14 @@ class AuthService {
     required String email,
     required String password,
     String personalization = 'personal',
+    bool acceptedTerms = false,
   }) async {
     final r = await _api.dio.post('/register', data: {
       'username': username,
       'email': email,
       'password': password,
       'personalization': personalization,
+      'accepted_terms': acceptedTerms,
     });
     await _api.saveToken(r.data['token']);
     return r.data;

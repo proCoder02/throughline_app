@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../config.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../services/consent_service.dart';
 import '../services/local_cache.dart';
 import '../services/push_service.dart';
 
@@ -58,6 +59,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<String?> login(String user, String password) async {
     try {
+      ConsentService.instance.reset();
       final r = await _authService.login(username: user, password: password);
       isAuthenticated = true;
       username = r['username'];
@@ -75,13 +77,16 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     required String personalization,
+    bool acceptedTerms = false,
   }) async {
     try {
+      ConsentService.instance.reset();
       final r = await _authService.register(
         username: user,
         email: email,
         password: password,
         personalization: personalization,
+        acceptedTerms: acceptedTerms,
       );
       isAuthenticated = true;
       username = r['username'];
@@ -104,6 +109,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    ConsentService.instance.reset();
     await PushService.instance.unregisterDevice();
     await _authService.logout();
     isAuthenticated = false;

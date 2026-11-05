@@ -194,7 +194,7 @@ class _CallScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
-                    child: const Text('This call is being recorded',
+                    child: const Text('This call is recorded and transcribed',
                         style: TextStyle(color: Color(0xFFFF8A80), fontSize: 12)),
                   ),
                   const Spacer(flex: 3),

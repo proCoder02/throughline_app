@@ -8,6 +8,7 @@ import '../main.dart' show authProvider, notifyProvider, callProvider, navigator
 import '../models/conversation.dart';
 import '../models/friend.dart';
 import '../services/api_client.dart';
+import '../services/consent_service.dart';
 import '../services/conversation_service.dart';
 import '../services/friend_service.dart';
 import '../services/push_service.dart';
@@ -92,6 +93,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // Accounts that haven't agreed to the current Terms/Privacy version
+    // (e.g. created before they existed) are asked once -- after the first
+    // frame, so it never delays startup; offline it simply waits.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askTermsIfNeeded());
     WidgetsBinding.instance.addObserver(this);
     unawaited(_bootstrap());
     // "Meet someone" on the app icon's long-press menu.
@@ -314,6 +319,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       notifyProvider.clearNativelyRinging(callId);
       unawaited(callProvider.joinCall(callId, callerId: callerId ?? 0));
     }
+  }
+
+  Future<void> _askTermsIfNeeded() async {
+    if (!await ConsentService.instance.termsNeeded(userId: authProvider.userId)) return;
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted || !mounted) return;
+    await showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => TermsAgreementDialog(onLogout: authProvider.logout),
+    );
   }
 
   @override
