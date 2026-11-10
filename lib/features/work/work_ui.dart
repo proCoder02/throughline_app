@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../theme.dart';
 import 'work_api.dart';
+import 'work_glass.dart';
 
 /// Shared pieces for the Work screens, in the app's warm palette.
 
@@ -55,10 +56,7 @@ class WorkPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: AppColors.dmGradient),
-      ),
+    return WorkBackdrop(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -90,43 +88,15 @@ class WorkCard extends StatelessWidget {
   const WorkCard({super.key, required this.child, this.onTap, this.padding = const EdgeInsets.all(14), this.edge});
 
   @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: onTap != null,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Material(
-          color: AppColors.dmPillFill,
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.dmBubbleBorder),
-              ),
-              child: edge == null
-                  ? Padding(padding: padding, child: child)
-                  : IntrinsicHeight(
-                      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        Container(
-                          width: 4,
-                          decoration: BoxDecoration(
-                            color: edge,
-                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-                          ),
-                        ),
-                        Expanded(child: Padding(padding: padding, child: child)),
-                      ]),
-                    ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Frosted(onTap: onTap, padding: padding, accent: edge, child: child),
+      );
 }
+
+/// Bottom padding for a scrolling list: room for the floating Work bar
+/// (the shell reports it as bottom padding) plus normal breathing space.
+double listEnd(BuildContext context, [double extra = 24]) => MediaQuery.paddingOf(context).bottom + extra;
 
 class SectionTitle extends StatelessWidget {
   final String text;

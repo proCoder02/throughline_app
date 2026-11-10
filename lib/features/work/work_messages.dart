@@ -6,6 +6,7 @@ import '../../theme.dart';
 import '../../widgets/formatted_text.dart';
 import 'work_api.dart';
 import 'work_context.dart';
+import 'work_glass.dart';
 import 'work_live.dart';
 import 'work_ui.dart';
 
@@ -31,6 +32,35 @@ class _MessagesTabState extends State<MessagesTab> {
     ));
     _listKey.currentState?.reload();
     widget.onUnreadChanged?.call();
+  }
+
+  Widget _tile(Map t) {
+    final team = t['kind'] == 'team';
+    final unread = (t['unread'] as num?)?.toInt() ?? 0;
+    final name = t['name'] as String? ?? '';
+    return ListTile(
+      onTap: () => _open(t),
+      leading: CircleAvatar(
+        radius: 22,
+        backgroundColor: (team ? AppColors.dmAccent : const Color(0xFF6B8FD9)).withValues(alpha: 0.18),
+        child: team
+            ? const Icon(Icons.groups_rounded, color: AppColors.dmAccentDark)
+            : Text(name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF3F64B0))),
+      ),
+      title: Text(name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600, color: AppColors.dmText)),
+      subtitle: Muted(t['last_body'] as String? ?? (team ? 'Team conversation' : 'Direct message'), maxLines: 1),
+      trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Muted(fmtDay(t['last_message_at'] as String?), size: 12),
+        if (unread > 0) ...[
+          const SizedBox(height: 4),
+          Badge(label: Text('$unread'), backgroundColor: AppColors.dmAccent),
+        ],
+      ]),
+    );
   }
 
   Future<void> _newDirect() async {
@@ -77,40 +107,17 @@ class _MessagesTabState extends State<MessagesTab> {
                   text: 'You get a thread for each team you join. Tap ✎ to message someone.'),
             ]);
           }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 90),
-            itemCount: threads.length,
-            separatorBuilder: (_, __) => Divider(height: 1, indent: 72, color: AppColors.dmBubbleBorder),
-            itemBuilder: (context, i) {
-              final t = threads[i];
-              final team = t['kind'] == 'team';
-              final unread = (t['unread'] as num?)?.toInt() ?? 0;
-              final name = t['name'] as String? ?? '';
-              return ListTile(
-                onTap: () => _open(t),
-                leading: CircleAvatar(
-                  radius: 22,
-                  backgroundColor: (team ? AppColors.dmAccent : const Color(0xFF6B8FD9)).withValues(alpha: 0.18),
-                  child: team
-                      ? const Icon(Icons.groups_rounded, color: AppColors.dmAccentDark)
-                      : Text(name.isEmpty ? '?' : name[0].toUpperCase(),
-                          style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF3F64B0))),
-                ),
-                title: Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600, color: AppColors.dmText)),
-                subtitle: Muted(t['last_body'] as String? ?? (team ? 'Team conversation' : 'Direct message'), maxLines: 1),
-                trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Muted(fmtDay(t['last_message_at'] as String?), size: 12),
-                  if (unread > 0) ...[
-                    const SizedBox(height: 4),
-                    Badge(label: Text('$unread'), backgroundColor: AppColors.dmAccent),
-                  ],
-                ]),
-              );
-            },
-          );
+          return ListView(padding: EdgeInsets.fromLTRB(12, 4, 12, listEnd(context, 90)), children: [
+            Frosted(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(children: [
+                for (var i = 0; i < threads.length; i++) ...[
+                  if (i > 0) Divider(height: 1, indent: 72, endIndent: 16, color: AppColors.dmBubbleBorder),
+                  _tile(threads[i]),
+                ],
+              ]),
+            ),
+          ]);
         },
       ),
     );

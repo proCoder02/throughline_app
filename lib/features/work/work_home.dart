@@ -8,6 +8,9 @@ import 'work_commitments.dart';
 import 'work_context.dart';
 import 'work_meetings.dart';
 import 'mode_switch.dart';
+import 'work_glass.dart';
+import '../../main.dart' show authProvider;
+import 'package:intl/intl.dart';
 import 'work_ui.dart';
 
 /// Work home: what needs me today. To confirm, blockers, what I owe, what
@@ -23,6 +26,9 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> {
   final _api = WorkApi.instance;
   int _version = 0;
+  final _keys = {
+    for (final k in ['risks', 'confirm', 'owe', 'owed']) k: GlobalKey()
+  };
 
   int get _org => widget.work.orgId;
   bool get _receivesRequests => widget.work.managesATeam || widget.work.role != 'member';
@@ -91,8 +97,18 @@ class _HomeTabState extends State<HomeTab> {
           final requests = List<Map>.from(d['requests'] ?? []);
           final decisions = List<Map>.from(d['decisions'] ?? []);
           final nothing = toConfirm.isEmpty && owe.isEmpty && owed.isEmpty && risks.isEmpty && requests.isEmpty;
-          return ListView(padding: const EdgeInsets.fromLTRB(14, 0, 14, 28), children: [
-            const Padding(padding: EdgeInsets.only(bottom: 10), child: Center(child: ModeSwitch(work: true))),
+          return ListView(padding: EdgeInsets.fromLTRB(16, 0, 16, listEnd(context, 28)), children: [
+            const Align(alignment: Alignment.centerLeft, child: ModeSwitch(work: true)),
+            const SizedBox(height: 18),
+            _Greeting(org: work.orgName),
+            const SizedBox(height: 16),
+            _StatGrid(tiles: [
+              _Stat('Blocked', risks.length, Icons.block_rounded, AppColors.danger, _keys['risks']!),
+              _Stat('To confirm', toConfirm.length, Icons.fact_check_outlined, const Color(0xFF7B5BD6), _keys['confirm']!),
+              _Stat('You owe', owe.length, Icons.outbox_outlined, AppColors.dmAccentDark, _keys['owe']!),
+              _Stat('Waiting on', owed.length, Icons.hourglass_bottom_rounded, const Color(0xFF2E8F79), _keys['owed']!),
+            ]),
+            const SizedBox(height: 14),
             _CatchUpCard(work: work),
             if (nothing)
               const EmptyNote(
@@ -101,7 +117,7 @@ class _HomeTabState extends State<HomeTab> {
                 text: 'Promises from your meetings, calls, work chat and email land here.',
               ),
             if (risks.isNotEmpty) ...[
-              SectionTitle('Blocked or at risk', count: risks.length),
+              SectionTitle('Blocked or at risk', key: _keys['risks'], count: risks.length),
               for (final r in risks)
                 WorkCard(
                   edge: AppColors.danger,
@@ -119,7 +135,7 @@ class _HomeTabState extends State<HomeTab> {
                 ),
             ],
             if (toConfirm.isNotEmpty) ...[
-              SectionTitle('To confirm', count: toConfirm.length),
+              SectionTitle('To confirm', key: _keys['confirm'], count: toConfirm.length),
               const Padding(
                 padding: EdgeInsets.only(bottom: 8, left: 2),
                 child: Muted('Throughline heard these. Confirm the real ones; drop the rest.'),
@@ -140,11 +156,11 @@ class _HomeTabState extends State<HomeTab> {
               for (final r in requests) _requestCard(r),
             ],
             if (owe.isNotEmpty) ...[
-              SectionTitle('You owe', count: owe.length),
+              SectionTitle('You owe', key: _keys['owe'], count: owe.length),
               for (final c in owe) CommitmentTile(c: c, showOwner: false, onTap: () => _open(c['id'] as int)),
             ],
             if (owed.isNotEmpty) ...[
-              SectionTitle('Waiting on others', count: owed.length),
+              SectionTitle('Waiting on others', key: _keys['owed'], count: owed.length),
               for (final c in owed) CommitmentTile(c: c, onTap: () => _open(c['id'] as int)),
             ],
             SectionTitle(
@@ -172,12 +188,12 @@ class _HomeTabState extends State<HomeTab> {
                 ]),
               ),
             if (work.role != 'member' || work.managesATeam)
-              const Padding(
-                padding: EdgeInsets.only(top: 22),
+              Padding(
+                padding: const EdgeInsets.only(top: 22),
                 child: Row(children: [
-                  Icon(Icons.desktop_windows_outlined, size: 16, color: Color(0xFF8A7C6E)),
-                  SizedBox(width: 8),
-                  Expanded(child: Muted('People, teams, invitations and projects are managed on the website.')),
+                  Icon(Icons.desktop_windows_outlined, size: 16, color: workSoftText),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Muted('People, teams, invitations and projects are managed on the website.')),
                 ]),
               ),
           ]);
@@ -224,7 +240,7 @@ class _CatchUpCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: WorkCard(
+      child: _HighlightCard(
         onTap: () => showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -331,6 +347,118 @@ class _CatchUpSheetState extends State<_CatchUpSheet> {
                         ]),
             ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _Greeting extends StatelessWidget {
+  final String org;
+  const _Greeting({required this.org});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final part = now.hour < 12
+        ? 'Good morning'
+        : now.hour < 17
+            ? 'Good afternoon'
+            : 'Good evening';
+    final name = (authProvider.username ?? '').split(RegExp(r'\s+')).first;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(name.isEmpty ? part : '$part, $name', style: appHeadlineFont(color: AppColors.dmText, fontSize: 26)),
+      const SizedBox(height: 6),
+      Muted('${DateFormat('EEEE, d MMMM').format(now)} · $org', size: 14),
+    ]);
+  }
+}
+
+class _Stat {
+  final String label;
+  final int count;
+  final IconData icon;
+  final Color color;
+  final GlobalKey section;
+  const _Stat(this.label, this.count, this.icon, this.color, this.section);
+}
+
+/// Four glass tiles: blocked, to confirm, owed by me, owed to me.
+/// Tapping one scrolls to its section.
+class _StatGrid extends StatelessWidget {
+  final List<_Stat> tiles;
+  const _StatGrid({required this.tiles});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tile(_Stat t) => Expanded(
+          child: Frosted(
+            radius: 22,
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            onTap: t.count == 0
+                ? null
+                : () {
+                    final ctx = t.section.currentContext;
+                    if (ctx != null) {
+                      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
+                    }
+                  },
+            child: Semantics(
+              label: '${t.label}: ${t.count}',
+              excludeSemantics: true,
+              child: Row(children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(color: t.color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(t.icon, size: 20, color: t.color),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${t.count}',
+                        style: TextStyle(
+                            fontSize: 22, height: 1.1, fontWeight: FontWeight.w800, color: t.count > 0 ? AppColors.dmText : workSoftText)),
+                    Text(t.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: workSoftText)),
+                  ]),
+                ),
+              ]),
+            ),
+          ),
+        );
+    return Column(children: [
+      Row(children: [tile(tiles[0]), const SizedBox(width: 10), tile(tiles[1])]),
+      const SizedBox(height: 10),
+      Row(children: [tile(tiles[2]), const SizedBox(width: 10), tile(tiles[3])]),
+    ]);
+  }
+}
+
+/// The warm accent card (Catch me up).
+class _HighlightCard extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _HighlightCard({required this.child, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: Container(
+        decoration: glassDecoration(radius: 22).copyWith(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.dmAccent.withValues(alpha: 0.30), AppColors.dmAccent.withValues(alpha: 0.10)],
+          ),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: onTap,
+            child: Padding(padding: const EdgeInsets.all(16), child: child),
+          ),
         ),
       ),
     );

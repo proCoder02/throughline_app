@@ -7,6 +7,7 @@ import 'work_api.dart';
 import 'work_ask.dart';
 import 'work_commitments.dart';
 import 'work_context.dart';
+import 'work_glass.dart';
 import 'work_home.dart';
 import 'work_live.dart';
 import 'work_meetings.dart';
@@ -243,31 +244,28 @@ class _WorkScreenState extends State<WorkScreen> {
       AskTab(key: ValueKey('ask${work.orgId}'), work: work),
     ];
     return Scaffold(
+      // The bar floats over the content (glass); lists get its height as bottom padding.
+      extendBody: true,
+      backgroundColor: Colors.transparent,
       body: IndexedStack(
           index: _tab, children: [for (var i = 0; i < tabs.length; i++) _visited.contains(i) ? tabs[i] : const SizedBox.shrink()]),
       bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
         const _OutboxStrip(),
-        NavigationBar(
-          selectedIndex: _tab,
-          backgroundColor: AppColors.dmBubbleIn,
-          indicatorColor: AppColors.dmAccent.withValues(alpha: 0.22),
-          onDestinationSelected: (i) {
+        GlassNavBar(
+          index: _tab,
+          onTap: (i) {
             setState(() {
               _tab = i;
               _visited.add(i);
             });
             if (i == 1) _refreshUnread();
           },
-          destinations: [
-            const NavigationDestination(icon: Icon(Icons.wb_sunny_outlined), selectedIcon: Icon(Icons.wb_sunny), label: 'Home'),
-            NavigationDestination(
-              icon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), child: const Icon(Icons.forum_outlined)),
-              selectedIcon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), child: const Icon(Icons.forum)),
-              label: 'Messages',
-            ),
-            const NavigationDestination(icon: Icon(Icons.task_alt_outlined), selectedIcon: Icon(Icons.task_alt), label: 'Commitments'),
-            const NavigationDestination(icon: Icon(Icons.groups_2_outlined), selectedIcon: Icon(Icons.groups_2), label: 'Meetings'),
-            const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Ask'),
+          items: [
+            const GlassNavItem(Icons.wb_sunny_outlined, Icons.wb_sunny, 'Home'),
+            GlassNavItem(Icons.forum_outlined, Icons.forum, 'Messages', badge: unread),
+            const GlassNavItem(Icons.task_alt_outlined, Icons.task_alt, 'Commitments'),
+            const GlassNavItem(Icons.groups_2_outlined, Icons.groups_2, 'Meetings'),
+            const GlassNavItem(Icons.auto_awesome_outlined, Icons.auto_awesome, 'Ask'),
           ],
         ),
       ]),
@@ -286,10 +284,11 @@ class _OutboxStrip extends StatelessWidget {
       valueListenable: api.pending,
       builder: (context, n, _) => n == 0
           ? const SizedBox.shrink()
-          : Material(
-              color: AppColors.dmAccent.withValues(alpha: 0.16),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+          : Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: GlassPanel(
+                radius: 18,
+                padding: const EdgeInsets.fromLTRB(16, 2, 8, 2),
                 child: Row(children: [
                   Icon(Icons.cloud_upload_outlined, size: 18, color: AppColors.dmText),
                   const SizedBox(width: 10),

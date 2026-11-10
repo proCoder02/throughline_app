@@ -72,7 +72,7 @@ class _CommitmentsTabState extends State<CommitmentsTab> {
             ]);
           }
           return ListView(
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
+            padding: EdgeInsets.fromLTRB(14, 6, 14, listEnd(context)),
             children: [
               for (final c in items)
                 CommitmentTile(

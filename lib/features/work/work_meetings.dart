@@ -40,7 +40,7 @@ class MeetingsTab extends StatelessWidget {
               ),
             ]);
           }
-          return ListView(padding: const EdgeInsets.fromLTRB(14, 6, 14, 24), children: [
+          return ListView(padding: EdgeInsets.fromLTRB(14, 6, 14, listEnd(context)), children: [
             for (final m in items)
               WorkCard(
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(
