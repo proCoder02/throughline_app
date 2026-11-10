@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../main.dart' show callProvider;
 import '../models/call.dart';
+import '../features/work/work_live.dart';
 import '../models/direct_message.dart';
 import '../services/notify_socket.dart';
 import '../services/push_service.dart'
@@ -126,6 +127,10 @@ class NotifyProvider extends ChangeNotifier {
 
   void _handle(Map<String, dynamic> event) {
     switch (event['type']) {
+      case 'corp_message':
+        // Work chat: handled entirely in features/work (thread screens, badge, heads-up).
+        WorkLive.instance.onLiveMessage(event);
+        break;
       case 'task_created':
         taskBadge++;
         // A real system notification, not the in-app SnackBar (see

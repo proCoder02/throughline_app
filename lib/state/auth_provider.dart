@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../config.dart';
+import '../features/work/work_api.dart';
+import '../features/work/work_live.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/consent_service.dart';
@@ -117,6 +119,8 @@ class AuthProvider extends ChangeNotifier {
     userId = null;
     profilePictureUrl = null;
     await LocalCache.instance.clear();
+    await WorkApi.instance.clear();
+    WorkLive.instance.stop();
     notifyListeners();
   }
 
@@ -127,6 +131,8 @@ class AuthProvider extends ChangeNotifier {
     userId = null;
     profilePictureUrl = null;
     LocalCache.instance.clear();
+    WorkApi.instance.clear();
+    WorkLive.instance.stop();
     notifyListeners();
   }
 

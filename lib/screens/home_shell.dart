@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../features/meet/meet.dart';
+import '../features/work/mode_switch.dart';
+import '../features/work/work_api.dart';
+import '../features/work/work_live.dart';
 import '../main.dart' show authProvider, notifyProvider, callProvider, navigatorKey;
 import '../models/conversation.dart';
 import '../models/friend.dart';
@@ -117,6 +120,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       notifyProvider.forceReconnect();
+      // Work: send changes made offline, refresh the unread count.
+      unawaited(WorkLive.instance.refresh());
+      unawaited(WorkApi.instance.flush());
     }
   }
 
@@ -199,6 +205,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     PushService.instance.onIncomingCallForeground =
         notifyProvider.handleIncomingCallPush;
     PushService.instance.onMessageTapped = (data) {
+      // Work notifications open the exact conversation or commitment.
+      final workTarget = WorkTarget.fromPush(data);
+      if (workTarget != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final nav = navigatorKey.currentState;
+          if (nav != null) openWork(nav, target: workTarget);
+        });
+        return;
+      }
       switch (data['type']) {
         case 'incoming_call':
           notifyProvider.handleIncomingCallPush(data);
@@ -234,6 +249,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       }
     };
     unawaited(PushService.instance.registerDevice());
+    unawaited(_startWork());
+  }
+
+  /// Work: live state, and reopen in Work for someone who left the app there.
+  Future<void> _startWork() async {
+    await WorkLive.instance.start();
+    if (WorkLive.instance.hasWork.value && await WorkLive.instance.lastModeWasWork()) {
+      final nav = navigatorKey.currentState;
+      if (nav != null && mounted) unawaited(openWork(nav));
+    }
   }
 
   void _openConversationFromPush(Map<String, dynamic> data) {
@@ -541,6 +566,20 @@ class _AppDrawerState extends State<_AppDrawer> {
                       : null,
                   onTap: () => _select(index),
                 ),
+              // Work (Corporate): the employee side of the organisation the
+              // user belongs to. Admin work (people, teams, invitations,
+              // projects) stays on the website -- see features/work/.
+              Divider(height: 20, indent: 16, endIndent: 16, color: AppColors.dmBubbleBorder),
+              ListTile(
+                leading: Icon(Icons.work_outline, color: AppColors.dmTextSoft),
+                title: Text('Work', style: TextStyle(color: AppColors.dmText, fontWeight: FontWeight.w500)),
+                subtitle: Text('Your organisation', style: TextStyle(fontSize: 12, color: AppColors.dmTextSoft)),
+                onTap: () {
+                  final nav = Navigator.of(context);
+                  nav.pop();
+                  openWork(nav);
+                },
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
                 child: Row(

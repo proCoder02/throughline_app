@@ -1,3 +1,4 @@
+import '../../features/work/mode_switch.dart';
 import '../../features/meet/meet.dart';
 import 'dart:async';
 import 'dart:ui';
@@ -419,6 +420,9 @@ class _TopBar extends StatelessWidget {
           // icon/wordmark on their home screen, never a name+tagline.
           Icon(Icons.all_inclusive, color: AppColors.dmTextSoft, size: 22),
           const Spacer(),
+          // Personal | Work, only for people in an organisation.
+          const ModeSwitch(work: false),
+          const SizedBox(width: 10),
           GestureDetector(
             onTap: onAvatarTap,
             child: CircleAvatar(
