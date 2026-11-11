@@ -9,6 +9,7 @@ import 'work_context.dart';
 import 'work_meetings.dart';
 import 'work_tickets.dart';
 import 'work_client.dart';
+import 'work_ask.dart';
 import 'mode_switch.dart';
 import 'work_glass.dart';
 import '../../main.dart' show authProvider;
@@ -107,134 +108,158 @@ class _HomeTabState extends State<HomeTab> {
           final requests = List<Map>.from(d['requests'] ?? []);
           final decisions = List<Map>.from(d['decisions'] ?? []);
           final nothing = toConfirm.isEmpty && owe.isEmpty && owed.isEmpty && risks.isEmpty && requests.isEmpty;
-          return ListView(padding: EdgeInsets.fromLTRB(16, 0, 16, listEnd(context, 28)), children: [
-            const Align(alignment: Alignment.centerLeft, child: ModeSwitch(work: true)),
-            const SizedBox(height: 18),
-            _Greeting(org: work.orgName),
-            const SizedBox(height: 16),
-            _StatGrid(tiles: [
-              _Stat('Blocked', risks.length, Icons.block_rounded, AppColors.danger, _keys['risks']!),
-              _Stat('To confirm', toConfirm.length, Icons.fact_check_outlined, const Color(0xFF7B5BD6), _keys['confirm']!),
-              _Stat('You owe', owe.length, Icons.outbox_outlined, AppColors.dmAccentDark, _keys['owe']!),
-              _Stat('Waiting on', owed.length, Icons.hourglass_bottom_rounded, const Color(0xFF2E8F79), _keys['owed']!),
-            ]),
-            const SizedBox(height: 14),
-            _CatchUpCard(work: work),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                  child: _QuickLink(
-                      icon: Icons.groups_2_outlined,
-                      label: 'Meetings & calls',
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MeetingsTab(work: work, pushed: true))))),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _QuickLink(
-                      icon: Icons.gavel_rounded,
-                      label: 'Decisions',
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))))),
-            ]),
-            if (d['client_digest'] is Map) ClientDigestCard(work: work, digest: d['client_digest'] as Map),
-            if ((d['my_tickets'] as List?)?.isNotEmpty == true) ...[
-              SectionTitle('Your tickets', count: (d['my_tickets'] as List).length),
-              for (final t in List<Map>.from(d['my_tickets']).take(4))
-                TicketTile(
-                    t: t,
-                    onTap: () async {
-                      await openTicket(context, work, id: t['id'] as int);
-                      if (mounted) setState(() => _version++);
-                    }),
-            ],
-            if (nothing)
-              const EmptyNote(
-                icon: Icons.wb_sunny_outlined,
-                title: 'Nothing needs you right now',
-                text: 'Promises from your meetings, calls, work chat and email land here.',
-              ),
-            if (risks.isNotEmpty) ...[
-              SectionTitle('Blocked or at risk', key: _keys['risks'], count: risks.length),
-              for (final r in risks)
-                WorkCard(
-                  edge: AppColors.danger,
-                  onTap: r['commitment'] != null ? () => _open(r['commitment_id'] as int) : null,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(r['commitment'] as String? ?? "${r['commitment_unit'] ?? 'Another team'}'s work",
-                        style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dmText)),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Blocked by ${r['blocker_unit'] ?? 'another team'}${r['blocker'] != null ? ': ${r['blocker']}' : ''}',
-                      style: const TextStyle(fontSize: 13, color: AppColors.danger),
-                    ),
-                    if (r['due_date'] != null) Muted('due ${fmtDay(r['due_date'] as String)}'),
-                  ]),
+          final suggestions = _suggestions(d, risks, owe);
+          return Stack(children: [
+            ListView(padding: EdgeInsets.fromLTRB(16, 0, 16, listEnd(context, 150)), children: [
+              const Align(alignment: Alignment.centerLeft, child: ModeSwitch(work: true)),
+              const SizedBox(height: 18),
+              _Greeting(org: work.orgName),
+              const SizedBox(height: 16),
+              _StatGrid(tiles: [
+                _Stat('Blocked', risks.length, Icons.block_rounded, AppColors.danger, _keys['risks']!),
+                _Stat('To confirm', toConfirm.length, Icons.fact_check_outlined, const Color(0xFF7B5BD6), _keys['confirm']!),
+                _Stat('You owe', owe.length, Icons.outbox_outlined, AppColors.dmAccentDark, _keys['owe']!),
+                _Stat('Waiting on', owed.length, Icons.hourglass_bottom_rounded, const Color(0xFF2E8F79), _keys['owed']!),
+              ]),
+              const SizedBox(height: 14),
+              _CatchUpCard(work: work),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: _QuickLink(icon: Icons.history, label: 'Your chats', onTap: () => showAskChats(context, work))),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _QuickLink(
+                        icon: Icons.gavel_rounded,
+                        label: 'Decisions',
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))))),
+              ]),
+              if (d['client_digest'] is Map) ClientDigestCard(work: work, digest: d['client_digest'] as Map),
+              if ((d['my_tickets'] as List?)?.isNotEmpty == true) ...[
+                SectionTitle('Your tickets', count: (d['my_tickets'] as List).length),
+                for (final t in List<Map>.from(d['my_tickets']).take(4))
+                  TicketTile(
+                      t: t,
+                      onTap: () async {
+                        await openTicket(context, work, id: t['id'] as int);
+                        if (mounted) setState(() => _version++);
+                      }),
+              ],
+              if (nothing)
+                const EmptyNote(
+                  icon: Icons.wb_sunny_outlined,
+                  title: 'Nothing needs you right now',
+                  text: 'Promises from your meetings, calls, work chat and email land here.',
                 ),
-            ],
-            if (toConfirm.isNotEmpty) ...[
-              SectionTitle('To confirm', key: _keys['confirm'], count: toConfirm.length),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8, left: 2),
-                child: Muted('Throughline heard these. Confirm the real ones; drop the rest.'),
-              ),
-              for (final c in toConfirm)
-                CommitmentTile(
-                  c: c,
-                  onTap: () => _open(c['id'] as int),
-                  trailing: IconButton(
-                    tooltip: 'Confirm',
-                    icon: const Icon(Icons.check_circle_outline, color: Color(0xFF2E9D6A)),
-                    onPressed: () => _confirm(c['id'] as int),
-                  ),
-                ),
-            ],
-            if (requests.isNotEmpty) ...[
-              SectionTitle('Requests to your team', count: requests.length),
-              for (final r in requests) _requestCard(r),
-            ],
-            if (owe.isNotEmpty) ...[
-              SectionTitle('You owe', key: _keys['owe'], count: owe.length),
-              for (final c in owe) CommitmentTile(c: c, showOwner: false, onTap: () => _open(c['id'] as int)),
-            ],
-            if (owed.isNotEmpty) ...[
-              SectionTitle('Waiting on others', key: _keys['owed'], count: owed.length),
-              for (final c in owed) CommitmentTile(c: c, onTap: () => _open(c['id'] as int)),
-            ],
-            SectionTitle(
-              'Recent decisions',
-              trailing: TextButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))),
-                child: const Text('All'),
-              ),
-            ),
-            if (decisions.isEmpty) const Muted('No decisions in the last 7 days.'),
-            for (final dec in decisions)
-              WorkCard(
-                onTap: () =>
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionScreen(work: work, id: dec['id'] as int))),
-                child: Row(children: [
-                  const Icon(Icons.gavel_rounded, size: 18, color: AppColors.dmAccentDark),
-                  const SizedBox(width: 10),
-                  Expanded(
+              if (risks.isNotEmpty) ...[
+                SectionTitle('Blocked or at risk', key: _keys['risks'], count: risks.length),
+                for (final r in risks)
+                  WorkCard(
+                    edge: AppColors.danger,
+                    onTap: r['commitment'] != null ? () => _open(r['commitment_id'] as int) : null,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(dec['title'] as String? ?? '', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dmText)),
-                      Muted([if (dec['unit_name'] != null) dec['unit_name'], 'v${dec['version']}', fmtDay(dec['updated_at'] as String?)]
-                          .join(' · ')),
+                      Text(r['commitment'] as String? ?? "${r['commitment_unit'] ?? 'Another team'}'s work",
+                          style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dmText)),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Blocked by ${r['blocker_unit'] ?? 'another team'}${r['blocker'] != null ? ': ${r['blocker']}' : ''}',
+                        style: const TextStyle(fontSize: 13, color: AppColors.danger),
+                      ),
+                      if (r['due_date'] != null) Muted('due ${fmtDay(r['due_date'] as String)}'),
                     ]),
                   ),
-                ]),
+              ],
+              if (toConfirm.isNotEmpty) ...[
+                SectionTitle('To confirm', key: _keys['confirm'], count: toConfirm.length),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8, left: 2),
+                  child: Muted('Throughline heard these. Confirm the real ones; drop the rest.'),
+                ),
+                for (final c in toConfirm)
+                  CommitmentTile(
+                    c: c,
+                    onTap: () => _open(c['id'] as int),
+                    trailing: IconButton(
+                      tooltip: 'Confirm',
+                      icon: const Icon(Icons.check_circle_outline, color: Color(0xFF2E9D6A)),
+                      onPressed: () => _confirm(c['id'] as int),
+                    ),
+                  ),
+              ],
+              if (requests.isNotEmpty) ...[
+                SectionTitle('Requests to your team', count: requests.length),
+                for (final r in requests) _requestCard(r),
+              ],
+              if (owe.isNotEmpty) ...[
+                SectionTitle('You owe', key: _keys['owe'], count: owe.length),
+                for (final c in owe) CommitmentTile(c: c, showOwner: false, onTap: () => _open(c['id'] as int)),
+              ],
+              if (owed.isNotEmpty) ...[
+                SectionTitle('Waiting on others', key: _keys['owed'], count: owed.length),
+                for (final c in owed) CommitmentTile(c: c, onTap: () => _open(c['id'] as int)),
+              ],
+              SectionTitle(
+                'Recent decisions',
+                trailing: TextButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))),
+                  child: const Text('All'),
+                ),
               ),
-            if (work.role != 'member' || work.managesATeam)
-              Padding(
-                padding: const EdgeInsets.only(top: 22),
-                child: Row(children: [
-                  Icon(Icons.desktop_windows_outlined, size: 16, color: workSoftText),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Muted('People, teams, invitations and projects are managed on the website.')),
-                ]),
-              ),
+              if (decisions.isEmpty) const Muted('No decisions in the last 7 days.'),
+              for (final dec in decisions)
+                WorkCard(
+                  onTap: () =>
+                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionScreen(work: work, id: dec['id'] as int))),
+                  child: Row(children: [
+                    const Icon(Icons.gavel_rounded, size: 18, color: AppColors.dmAccentDark),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(dec['title'] as String? ?? '', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dmText)),
+                        Muted([if (dec['unit_name'] != null) dec['unit_name'], 'v${dec['version']}', fmtDay(dec['updated_at'] as String?)]
+                            .join(' · ')),
+                      ]),
+                    ),
+                  ]),
+                ),
+              if (work.role != 'member' || work.managesATeam)
+                Padding(
+                  padding: const EdgeInsets.only(top: 22),
+                  child: Row(children: [
+                    Icon(Icons.desktop_windows_outlined, size: 16, color: workSoftText),
+                    const SizedBox(width: 8),
+                    const Expanded(child: Muted('People, teams, invitations and projects are managed on the website.')),
+                  ]),
+                ),
+            ]),
+            // Ask lives on Home: a pinned bar (opens the conversation), suggestions from what's on screen.
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: MediaQuery.paddingOf(context).bottom + 8,
+              child: _AskBar(work: work, suggestions: suggestions),
+            ),
           ]);
         },
       ),
     );
+  }
+
+  /// Two or three questions about what's on Home right now.
+  List<String> _suggestions(Map d, List<Map> risks, List<Map> owe) {
+    final out = <String>[];
+    final digest = d['client_digest'];
+    if (digest is Map) {
+      for (final p in List<Map>.from(digest['projects'] ?? [])) {
+        if (p['health'] != 'on_track') out.add('Why is ${p['name']} at risk?');
+        for (final k in List<Map>.from(p['blocked_tickets'] ?? []).take(1)) {
+          out.add("What's blocking ${k['key']}?");
+        }
+      }
+    }
+    if (risks.isNotEmpty) out.add('What is blocked and who can unblock it?');
+    if (owe.any((c) => c['status'] == 'overdue')) out.add('What do I owe that is overdue?');
+    out.addAll(const ['What is still pending from our last meetings?', 'Who owes what this week?']);
+    return out.toSet().take(3).toList();
   }
 
   Widget _requestCard(Map r) => WorkCard(
@@ -518,4 +543,99 @@ class _QuickLink extends StatelessWidget {
           Icon(Icons.chevron_right, size: 20, color: workSoftText),
         ]),
       );
+}
+
+/// Home's ask bar: a tap target (not a text field) that opens the conversation
+/// with the keyboard ready, plus "Continue" for the last chat and a few
+/// suggestions based on what's on Home.
+class _AskBar extends StatefulWidget {
+  final WorkContext work;
+  final List<String> suggestions;
+  const _AskBar({required this.work, required this.suggestions});
+
+  @override
+  State<_AskBar> createState() => _AskBarState();
+}
+
+class _AskBarState extends State<_AskBar> {
+  Map? _last;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLast();
+  }
+
+  Future<void> _loadLast() async {
+    final l = await lastAsk(widget.work.orgId);
+    if (mounted) setState(() => _last = (l != null && l['id'] != null) ? l : null);
+  }
+
+  Future<void> _open({String? question, int? threadId, String? title}) async {
+    await openAsk(context, widget.work, question: question, threadId: threadId, threadTitle: title);
+    _loadLast();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[
+      if (_last != null)
+        ActionChip(
+          avatar: const Icon(Icons.history, size: 16),
+          label: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text('Continue: ${_last!['title']}', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+          ),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.padded,
+          onPressed: () => _open(threadId: _last!['id'] as int, title: _last!['title'] as String?),
+        ),
+      for (final q in widget.suggestions)
+        ActionChip(
+          label: Text(q, style: const TextStyle(fontSize: 13)),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.padded, // still a 48dp touch target
+          onPressed: () => _open(question: q),
+        ),
+    ];
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SizedBox(
+        height: 44,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: chips.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, i) => Center(child: chips[i]),
+        ),
+      ),
+      const SizedBox(height: 6),
+      Semantics(
+        button: true,
+        label: 'Ask about your work',
+        excludeSemantics: true,
+        child: GlassPanel(
+          radius: 26,
+          blur: 18,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(26),
+            onTap: () => _open(),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
+              child: Row(children: [
+                const Icon(Icons.auto_awesome, size: 20, color: AppColors.dmAccentDark),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Ask about your work…', style: TextStyle(fontSize: 15.5, color: workSoftText))),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(color: AppColors.dmAccent, shape: BoxShape.circle),
+                  child: const Icon(Icons.arrow_upward_rounded, size: 20, color: Colors.white),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    ]);
+  }
 }

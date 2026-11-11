@@ -359,7 +359,12 @@ class _ThreadScreenState extends State<ThreadScreen> {
                   minLines: 1,
                   maxLines: 5,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(border: InputBorder.none, hintText: 'Message ${widget.title}'),
+                  decoration: InputDecoration(
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      hintText: 'Message ${widget.title}'),
                 ),
               ),
               IconButton(

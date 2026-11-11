@@ -15,15 +15,43 @@ import 'work_ui.dart';
 /// only from meetings, decisions, commitments and chat in teams I'm in, and
 /// every answer links to where it came from. Each question is answered on
 /// its own; the thread stays while the Work section is open.
-class AskTab extends StatefulWidget {
+class AskScreen extends StatefulWidget {
   final WorkContext work;
-  const AskTab({super.key, required this.work});
+  final String? question; // asked straight away (from Home's ask bar or a suggestion)
+  final int? threadId; // reopen a saved chat
+  final String? threadTitle;
+  const AskScreen({super.key, required this.work, this.question, this.threadId, this.threadTitle});
 
   @override
-  State<AskTab> createState() => _AskTabState();
+  State<AskScreen> createState() => _AskScreenState();
 }
 
-class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
+/// Opens the conversation (Home's ask bar, a suggestion, Continue, or Your chats).
+Future<void> openAsk(BuildContext context, WorkContext work, {String? question, int? threadId, String? threadTitle}) =>
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => AskScreen(work: work, question: question, threadId: threadId, threadTitle: threadTitle),
+    ));
+
+/// The last chat, so Home can offer "Continue: ...".
+Future<Map?> lastAsk(int orgId) async {
+  final v = await WorkApi.instance.cached('last-ask:$orgId');
+  return v is Map ? v : null;
+}
+
+/// "Your chats" from anywhere: pick one to reopen it.
+Future<void> showAskChats(BuildContext context, WorkContext work) async {
+  final picked = await showModalBottomSheet<Map>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ChatsSheet(work: work, current: null),
+  );
+  if (picked != null && picked['id'] != null && context.mounted) {
+    await openAsk(context, work, threadId: picked['id'] as int, threadTitle: picked['title'] as String?);
+  }
+}
+
+class _AskScreenState extends State<AskScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final List<Map<String, dynamic>> _turns = [];
@@ -39,9 +67,6 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
     ('This week', 'Who owes what this week?'),
     ('Risks', 'Which commitments are overdue or at risk?'),
   ];
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   void dispose() {
@@ -67,12 +92,27 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
       if (_threadId != asked) return; // switched chats meanwhile; it's saved in its own thread
       _threadId ??= r['thread_id'] as int?;
       _threadTitle ??= q;
+      _rememberLast();
       _turns.add({'role': 'assistant', 'text': r['answer'] ?? 'No answer.', 'sources': r['sources'] ?? []});
     } catch (e) {
       _turns.add({'role': 'assistant', 'text': "Couldn't get an answer -- ${workError(e)}", 'error': true, 'q': q, 'unit': unit});
     }
     if (mounted) setState(() => _sending = false);
     _toEnd();
+  }
+
+  void _rememberLast() {
+    if (_threadId != null) WorkApi.instance.remember('last-ask:${widget.work.orgId}', {'id': _threadId, 'title': _threadTitle ?? ''});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.threadId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openThread({'id': widget.threadId, 'title': widget.threadTitle}));
+    } else if ((widget.question ?? '').trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _submit(widget.question));
+    }
   }
 
   void _newChat() => setState(() {
@@ -91,6 +131,7 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
     try {
       final d = await WorkApi.instance.askThread(widget.work.orgId, t['id'] as int);
       if (!mounted || _threadId != t['id']) return;
+      _rememberLast();
       setState(() {
         for (final m in List<Map>.from(d['messages'] ?? [])) {
           _turns.add(m['role'] == 'user'
@@ -116,6 +157,11 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
     );
     if (!mounted) return;
     if (picked == null) return;
+    if (picked['_deleted'] != null) {
+      final last = await lastAsk(widget.work.orgId);
+      if (last?['id'] == picked['_deleted']) await WorkApi.instance.remember('last-ask:${widget.work.orgId}', {});
+    }
+    if (!mounted) return;
     if (picked['_deleted'] == _threadId) {
       _newChat();
     } else if (picked['id'] != null) {
@@ -150,11 +196,10 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final units = widget.work.myUnits;
     return WorkPage(
       title: _threadTitle ?? 'Ask',
-      leading: widget.work.leading(context),
+      leading: null,
       actions: [
         IconButton(tooltip: 'Your chats', onPressed: _sending ? null : _showChats, icon: const Icon(Icons.history)),
         if (_turns.isNotEmpty || _threadId != null)
@@ -252,6 +297,8 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
                 Expanded(
                   child: TextField(
                     controller: _input,
+                    // Opened from Home's ask bar with nothing asked yet: ready to type.
+                    autofocus: widget.question == null && widget.threadId == null,
                     minLines: 1,
                     maxLines: 5,
                     maxLength: 500,
@@ -259,6 +306,9 @@ class _AskTabState extends State<AskTab> with AutomaticKeepAliveClientMixin {
                     onSubmitted: (_) => _submit(),
                     decoration: InputDecoration(
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
                       counterText: '',
                       hintText: _unitId == null
                           ? 'Ask about your team’s history…'

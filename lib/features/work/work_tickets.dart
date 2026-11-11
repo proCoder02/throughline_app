@@ -700,7 +700,12 @@ class _TicketScreenState extends State<TicketScreen> {
               minLines: 1,
               maxLines: 4,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(border: InputBorder.none, hintText: 'Add a comment'),
+              decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  hintText: 'Add a comment'),
             ),
           ),
           IconButton(

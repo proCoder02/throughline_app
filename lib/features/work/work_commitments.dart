@@ -477,6 +477,9 @@ class _CommitmentScreenState extends State<CommitmentScreen> {
               decoration: InputDecoration(
                 counterText: '',
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
                 hintText: switch (_kind) {
                   'blocker' => "What's blocking this?",
                   'unblocked' => 'What changed?',

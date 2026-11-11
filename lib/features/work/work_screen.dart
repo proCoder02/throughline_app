@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../theme.dart';
 import 'work_api.dart';
-import 'work_ask.dart';
+import 'work_meetings.dart';
 import 'work_commitments.dart';
 import 'work_context.dart';
 import 'work_glass.dart';
@@ -243,7 +243,7 @@ class _WorkScreenState extends State<WorkScreen> {
       MessagesTab(key: ValueKey('msg${work.orgId}'), work: work, onUnreadChanged: _refreshUnread),
       CommitmentsTab(key: ValueKey('com${work.orgId}'), work: work),
       TicketsTab(key: ValueKey('tk${work.orgId}'), work: work),
-      AskTab(key: ValueKey('ask${work.orgId}'), work: work),
+      MeetingsTab(key: ValueKey('meet${work.orgId}'), work: work),
     ];
     return Scaffold(
       // The bar floats over the content (glass); lists get its height as bottom padding.
@@ -267,7 +267,7 @@ class _WorkScreenState extends State<WorkScreen> {
             GlassNavItem(Icons.forum_outlined, Icons.forum, 'Messages', badge: unread),
             const GlassNavItem(Icons.task_alt_outlined, Icons.task_alt, 'Commitments'),
             const GlassNavItem(Icons.confirmation_number_outlined, Icons.confirmation_number, 'Tickets'),
-            const GlassNavItem(Icons.auto_awesome_outlined, Icons.auto_awesome, 'Ask'),
+            const GlassNavItem(Icons.groups_2_outlined, Icons.groups_2, 'Meetings'),
           ],
         ),
       ]),
