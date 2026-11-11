@@ -509,7 +509,7 @@ class _GreetingHeader extends StatelessWidget {
                 Icon(Icons.cloud_outlined,
                     size: 14, color: AppColors.dmTextSoft),
                 const SizedBox(width: 3),
-                Text('--Â°  Â·  --',
+                Text('--°  ·  --',
                     style:
                         TextStyle(fontSize: 11.5, color: AppColors.dmTextSoft)),
               ],
@@ -1196,7 +1196,7 @@ class _RecentActivityCard extends StatelessWidget {
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.dmText)),
-                          Text('${_relative(c.createdAt)} Â· ${c.category}',
+                          Text('${_relative(c.createdAt)} · ${c.category}',
                               style: TextStyle(
                                   fontSize: 10, color: AppColors.dmTextSoft)),
                         ],

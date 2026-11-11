@@ -32,7 +32,7 @@ import 'friends/friends_screen.dart';
 import 'friends/direct_message_screen.dart';
 import 'settings/settings_screen.dart';
 
-/// Bottom-nav shell for phones (Â§2): replaces the web app's 3-pane layout.
+/// Bottom-nav shell for phones (§2): replaces the web app's 3-pane layout.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
