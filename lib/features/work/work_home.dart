@@ -7,6 +7,7 @@ import 'work_api.dart';
 import 'work_commitments.dart';
 import 'work_context.dart';
 import 'work_meetings.dart';
+import 'work_tickets.dart';
 import 'mode_switch.dart';
 import 'work_glass.dart';
 import '../../main.dart' show authProvider;
@@ -41,7 +42,11 @@ class _HomeTabState extends State<HomeTab> {
         requests = await _api.incomingRequests(_org);
       } catch (_) {}
     }
-    return {...brief, 'requests': requests['requests'] ?? []};
+    Map mine = const {'tickets': []};
+    try {
+      mine = await _api.tickets(_org, scope: 'mine');
+    } catch (_) {}
+    return {...brief, 'requests': requests['requests'] ?? [], 'my_tickets': mine['tickets'] ?? []};
   }
 
   Future<void> _quick(Future<void> Function() f, String done) async {
@@ -110,6 +115,30 @@ class _HomeTabState extends State<HomeTab> {
             ]),
             const SizedBox(height: 14),
             _CatchUpCard(work: work),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                  child: _QuickLink(
+                      icon: Icons.groups_2_outlined,
+                      label: 'Meetings & calls',
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MeetingsTab(work: work, pushed: true))))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _QuickLink(
+                      icon: Icons.gavel_rounded,
+                      label: 'Decisions',
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))))),
+            ]),
+            if ((d['my_tickets'] as List?)?.isNotEmpty == true) ...[
+              SectionTitle('Your tickets', count: (d['my_tickets'] as List).length),
+              for (final t in List<Map>.from(d['my_tickets']).take(4))
+                TicketTile(
+                    t: t,
+                    onTap: () async {
+                      await openTicket(context, work, id: t['id'] as int);
+                      if (mounted) setState(() => _version++);
+                    }),
+            ],
             if (nothing)
               const EmptyNote(
                 icon: Icons.wb_sunny_outlined,
@@ -463,4 +492,24 @@ class _HighlightCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _QuickLink extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _QuickLink({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Frosted(
+        radius: 18,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        onTap: onTap,
+        child: Row(children: [
+          Icon(icon, size: 20, color: AppColors.dmAccentDark),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.dmText))),
+          Icon(Icons.chevron_right, size: 20, color: workSoftText),
+        ]),
+      );
 }

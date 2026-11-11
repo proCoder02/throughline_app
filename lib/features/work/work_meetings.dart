@@ -5,20 +5,22 @@ import '../../widgets/formatted_text.dart';
 import 'work_api.dart';
 import 'work_commitments.dart';
 import 'work_context.dart';
+import 'work_tickets.dart';
 import 'work_ui.dart';
 
 /// Meetings I can see (my teams', and private ones I was in, including my
 /// own work calls), read-only: summary, decisions, commitments, blockers.
 class MeetingsTab extends StatelessWidget {
   final WorkContext work;
-  const MeetingsTab({super.key, required this.work});
+  final bool pushed; // opened from Home rather than as a tab
+  const MeetingsTab({super.key, required this.work, this.pushed = false});
 
   @override
   Widget build(BuildContext context) {
     final org = work.orgId;
     return WorkPage(
       title: 'Meetings',
-      leading: work.leading(context),
+      leading: pushed ? null : work.leading(context),
       actions: [
         TextButton.icon(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))),
@@ -143,6 +145,8 @@ class MeetingScreen extends StatelessWidget {
                       reload();
                     }),
             ],
+            // After a call: which ticket was it about? Suggestions to confirm, or tag it yourself.
+            if (m['status'] == 'ready') TicketsOnItem(work: work, sourceType: 'meeting', sourceId: id),
             if (blockers.isNotEmpty) ...[
               SectionTitle('Blockers raised', count: blockers.length),
               for (final b in blockers)

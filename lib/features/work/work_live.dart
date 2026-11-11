@@ -13,8 +13,9 @@ class WorkTarget {
   final String? threadTitle;
   final bool team;
   final int? commitmentId;
+  final int? ticketId;
 
-  const WorkTarget({this.orgId, this.threadId, this.threadTitle, this.team = true, this.commitmentId});
+  const WorkTarget({this.orgId, this.threadId, this.threadTitle, this.team = true, this.commitmentId, this.ticketId});
 
   static int? _int(dynamic v) => v == null ? null : int.tryParse('$v');
 
@@ -28,6 +29,7 @@ class WorkTarget {
       threadTitle: data['title'] as String?,
       team: data['team'] != '0',
       commitmentId: _int(data['commitment_id']),
+      ticketId: _int(data['ticket_id']),
     );
   }
 }

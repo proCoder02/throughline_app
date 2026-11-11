@@ -182,6 +182,27 @@ class WorkApi {
   Future<Map> decisions(int org) async => await _get('${_o(org)}/decisions', cacheKey: 'decisions:$org') as Map;
   Future<Map> decision(int org, int id) async => await _get('${_o(org)}/decisions/$id') as Map;
 
+  // ---- tickets (PAY-12) and what's been said about them ----
+  Future<Map> tickets(int org, {String scope = 'mine', String status = 'open', String? q, int? projectId}) async => await _get(
+        '${_o(org)}/tickets',
+        query: {'scope': scope, 'status': status, if (q != null && q.isNotEmpty) 'q': q, if (projectId != null) 'project_id': projectId},
+        cacheKey: (q == null || q.isEmpty) ? 'tickets:$org:$scope:$status' : null,
+      ) as Map;
+  Future<Map> ticket(int org, int id) async => await _get('${_o(org)}/tickets/$id', cacheKey: 'ticket:$org:$id') as Map;
+  Future<Map> editTicket(int org, int id, Map<String, dynamic> data) async =>
+      (await _dio.patch('${_o(org)}/tickets/$id', data: data)).data as Map;
+  Future<Map> ticketComment(int org, int id, String body) async => await _post('${_o(org)}/tickets/$id/comments', {'body': body}) as Map;
+  Future<Map> ticketPerson(int org, int id, int userId, String role, {required bool add}) async => add
+      ? (await _dio.put('${_o(org)}/tickets/$id/people/$userId', data: {'role': role})).data as Map
+      : (await _dio.delete('${_o(org)}/tickets/$id/people/$userId', queryParameters: {'role': role})).data as Map;
+  Future<Map> tagTicket(int org, int id, String sourceType, int sourceId, {bool shared = false}) async =>
+      await _post('${_o(org)}/tickets/$id/links', {'source_type': sourceType, 'source_id': sourceId, 'shared': shared}) as Map;
+  Future<Map> ticketSuggestion(int org, int id, int linkId, String action) async =>
+      await _post('${_o(org)}/tickets/$id/links/$linkId/$action') as Map;
+  Future<Map> ticketBrief(int org, int id) async => await _post('${_o(org)}/tickets/$id/brief') as Map;
+  Future<Map> ticketsOn(int org, String sourceType, int sourceId) async =>
+      await _get('${_o(org)}/ticket-links', query: {'source_type': sourceType, 'source_id': sourceId}) as Map;
+
   // ---- ask ----
   Future<Map> ask(int org, String question, {int? unitId}) async =>
       await _post('${_o(org)}/ask', {'question': question, 'unit_id': unitId}) as Map;

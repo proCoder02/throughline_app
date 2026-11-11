@@ -8,6 +8,7 @@ import 'work_api.dart';
 import 'work_context.dart';
 import 'work_glass.dart';
 import 'work_live.dart';
+import 'work_tickets.dart';
 import 'work_ui.dart';
 
 /// Work chat: a thread per team I'm in, plus direct messages with anyone in
@@ -336,6 +337,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
                           m: m,
                           mine: m['sender_id'] == widget.work.meId,
                           showName: widget.team && older?['sender_id'] != m['sender_id'],
+                          work: widget.work,
                         );
                       },
                     ),
@@ -377,11 +379,39 @@ class _Bubble extends StatelessWidget {
   final Map m;
   final bool mine;
   final bool showName;
-  const _Bubble({required this.m, required this.mine, required this.showName});
+  final WorkContext work;
+  const _Bubble({required this.m, required this.mine, required this.showName, required this.work});
 
   @override
   Widget build(BuildContext context) {
     final special = m['kind'] != null && m['kind'] != 'text';
+    final id = m['id'] is int ? m['id'] as int : -1;
+    final keys = keysIn(m['body'] as String?);
+    final bubble = _bubble(context, special);
+    return Semantics(
+      hint: id > 0 ? 'Long press to tag to a ticket' : null,
+      child: GestureDetector(
+        onLongPress: id > 0 && !special ? () => tagToTicket(context, work, 'message', id) : null,
+        child: Column(crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
+          bubble,
+          if (keys.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 2),
+              child: Wrap(spacing: 6, children: [
+                for (final k in keys)
+                  ActionChip(
+                    avatar: const Icon(Icons.confirmation_number_outlined, size: 16),
+                    label: Text(k),
+                    onPressed: () => openTicket(context, work, key: k),
+                  ),
+              ]),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _bubble(BuildContext context, bool special) {
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(

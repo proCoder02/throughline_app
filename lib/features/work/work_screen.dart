@@ -10,8 +10,8 @@ import 'work_context.dart';
 import 'work_glass.dart';
 import 'work_home.dart';
 import 'work_live.dart';
-import 'work_meetings.dart';
 import 'work_messages.dart';
+import 'work_tickets.dart';
 import 'work_ui.dart';
 
 /// The phone's Work (Corporate) section -- the employee side only.
@@ -119,6 +119,8 @@ class _WorkScreenState extends State<WorkScreen> {
         nav.push(MaterialPageRoute(
           builder: (_) => ThreadScreen(work: work, threadId: t.threadId!, title: t.threadTitle ?? 'Conversation', team: t.team),
         ));
+      } else if (t.ticketId != null) {
+        openTicket(context, work, id: t.ticketId);
       } else if (t.commitmentId != null) {
         openCommitment(context, work, t.commitmentId!);
       } else {
@@ -240,7 +242,7 @@ class _WorkScreenState extends State<WorkScreen> {
       HomeTab(key: ValueKey('home${work.orgId}'), work: work),
       MessagesTab(key: ValueKey('msg${work.orgId}'), work: work, onUnreadChanged: _refreshUnread),
       CommitmentsTab(key: ValueKey('com${work.orgId}'), work: work),
-      MeetingsTab(key: ValueKey('meet${work.orgId}'), work: work),
+      TicketsTab(key: ValueKey('tk${work.orgId}'), work: work),
       AskTab(key: ValueKey('ask${work.orgId}'), work: work),
     ];
     return Scaffold(
@@ -264,7 +266,7 @@ class _WorkScreenState extends State<WorkScreen> {
             const GlassNavItem(Icons.wb_sunny_outlined, Icons.wb_sunny, 'Home'),
             GlassNavItem(Icons.forum_outlined, Icons.forum, 'Messages', badge: unread),
             const GlassNavItem(Icons.task_alt_outlined, Icons.task_alt, 'Commitments'),
-            const GlassNavItem(Icons.groups_2_outlined, Icons.groups_2, 'Meetings'),
+            const GlassNavItem(Icons.confirmation_number_outlined, Icons.confirmation_number, 'Tickets'),
             const GlassNavItem(Icons.auto_awesome_outlined, Icons.auto_awesome, 'Ask'),
           ],
         ),
