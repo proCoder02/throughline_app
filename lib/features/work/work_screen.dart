@@ -161,6 +161,8 @@ class _WorkScreenState extends State<WorkScreen> {
     try {
       final me = await _api.me();
       final orgs = _active(me);
+      // Left or removed: wipe that organisation's data from this phone.
+      await _api.keepOnlyOrgs({for (final o in orgs) o['id'] as int});
       final id = _pick(orgs, saved ?? _orgData?['org']?['id']);
       final org = id == null ? null : await _api.org(id);
       if (!mounted) return;
@@ -325,6 +327,27 @@ class _NoOrg extends StatelessWidget {
           final invites = List<Map>.from((data as Map)['invites'] ?? []);
           final email = data['email'] as String?;
           return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+            WorkCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Invited at your work email?', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.dmText)),
+                const SizedBox(height: 4),
+                const Muted('Confirm it with a code and keep using this account. Each company you join gets its own work identity.'),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () async {
+                    final ok = await showModalBottomSheet<bool>(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: AppColors.dmBubbleIn,
+                      builder: (_) => const _WorkEmailSheet(),
+                    );
+                    if (ok == true) reload();
+                  },
+                  icon: const Icon(Icons.alternate_email, size: 18),
+                  label: const Text('Confirm work email'),
+                ),
+              ]),
+            ),
             if (invites.isEmpty)
               EmptyNote(
                 icon: Icons.apartment_rounded,
@@ -362,6 +385,98 @@ class _NoOrg extends StatelessWidget {
           ]);
         },
       ),
+    );
+  }
+}
+
+/// Enter a work email, get a 6-digit code there, confirm it.
+class _WorkEmailSheet extends StatefulWidget {
+  const _WorkEmailSheet();
+
+  @override
+  State<_WorkEmailSheet> createState() => _WorkEmailSheetState();
+}
+
+class _WorkEmailSheetState extends State<_WorkEmailSheet> {
+  final _email = TextEditingController();
+  final _code = TextEditingController();
+  String? _sentTo;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    setState(() => _busy = true);
+    try {
+      final r = await WorkApi.instance.startWorkEmail(_email.text.trim());
+      if (!mounted) return;
+      if (r['verified'] == true) {
+        Navigator.pop(context, true);
+        return;
+      }
+      setState(() => _sentTo = r['email'] as String?);
+      showWorkSnack(context, 'Code sent to ${r['masked']}');
+    } catch (e) {
+      if (mounted) showWorkSnack(context, workError(e), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirm() async {
+    setState(() => _busy = true);
+    try {
+      await WorkApi.instance.verifyWorkEmail(_sentTo!, _code.text.trim());
+      if (!mounted) return;
+      showWorkSnack(context, '$_sentTo confirmed');
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) showWorkSnack(context, workError(e), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('Confirm your work email', style: appHeadlineFont(color: AppColors.dmText, fontSize: 18)),
+        const SizedBox(height: 6),
+        const Muted('We email it a 6-digit code to check it\'s yours. Your login stays the same.'),
+        const SizedBox(height: 14),
+        if (_sentTo == null) ...[
+          TextField(
+            controller: _email,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(labelText: 'Work email', hintText: 'you@company.com'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 14),
+          FilledButton(onPressed: _busy || !_email.text.contains('@') ? null : _send, child: Text(_busy ? 'Sending…' : 'Send a code')),
+        ] else ...[
+          TextField(
+            controller: _code,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            autofillHints: const [AutofillHints.oneTimeCode],
+            decoration: InputDecoration(labelText: 'Code sent to $_sentTo', counterText: ''),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 14),
+          FilledButton(onPressed: _busy || _code.text.trim().length != 6 ? null : _confirm, child: Text(_busy ? 'Checking…' : 'Confirm')),
+          TextButton(onPressed: _busy ? null : _send, child: const Text('Send a new code')),
+        ],
+      ]),
     );
   }
 }

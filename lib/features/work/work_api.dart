@@ -143,6 +143,32 @@ class WorkApi {
   Future<Map> org(int org) async => await _get(_o(org), cacheKey: 'org:$org') as Map;
   Future<Map> myInvites() async => await _get('/corp/invites/mine') as Map;
   Future<Map> acceptInvite(int id) async => await _post('/corp/invites/mine/$id/accept') as Map;
+
+  // ---- work identity: confirm a work email with a code ----
+  Future<Map> startWorkEmail(String email) async => await _post('/corp/work-email', {'email': email}) as Map;
+  Future<Map> verifyWorkEmail(String email, String code) async =>
+      await _post('/corp/work-email/verify', {'email': email, 'code': code}) as Map;
+
+  /// After leaving (or being removed from) an organisation, its data must not
+  /// stay on this phone: drops every saved copy and unsent change for any
+  /// organisation not in [orgIds].
+  Future<void> keepOnlyOrgs(Set<int> orgIds) async {
+    final box = await _cache();
+    for (final k in box.keys.toList()) {
+      final parts = '$k'.split(':');
+      final id = parts.length > 1 ? int.tryParse(parts[1]) : null;
+      if (id != null && !orgIds.contains(id)) await box.delete(k);
+    }
+    final selected = await cached('selected_org');
+    if (selected is int && !orgIds.contains(selected)) await box.delete('selected_org');
+    final items = await _outbox();
+    final keep = items.where((i) {
+      final m = RegExp(r'/corp/orgs/(\d+)/').firstMatch('${(i as Map)['path']}');
+      return m == null || orgIds.contains(int.parse(m.group(1)!));
+    }).toList();
+    if (keep.length != items.length) await _saveOutbox(keep);
+  }
+
   Future<Map> unread() async => await _get('/corp/unread') as Map;
 
   // ---- home ----
