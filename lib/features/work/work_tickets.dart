@@ -12,7 +12,14 @@ import 'work_ui.dart';
 /// ticket with its trace, and tagging messages, emails and calls to a ticket.
 /// Setting a project's ticket key stays on the website.
 
-const ticketStatus = {'todo': 'To do', 'in_progress': 'In progress', 'in_review': 'In review', 'done': 'Done', 'cancelled': 'Cancelled'};
+const ticketStatus = {
+  'todo': 'To do',
+  'in_progress': 'In progress',
+  'in_review': 'In review',
+  'blocked': 'Blocked',
+  'done': 'Done',
+  'cancelled': 'Cancelled',
+};
 const ticketPriority = {'urgent': 'Urgent', 'high': 'High', 'medium': 'Medium', 'low': 'Low'};
 final _keyRe = RegExp(r'\b([A-Z][A-Z0-9]{1,9}-\d{1,6})\b');
 
@@ -21,6 +28,7 @@ List<String> keysIn(String? text) => _keyRe.allMatches(text ?? '').map((m) => m.
 
 Color _statusColor(String? s) => switch (s) {
       'in_progress' => AppColors.dmAccentDark,
+      'blocked' => AppColors.danger,
       'in_review' => const Color(0xFF7B5BD6),
       'done' => const Color(0xFF2E8F79),
       'cancelled' => workSoftText,
@@ -590,6 +598,7 @@ class _TicketScreenState extends State<TicketScreen> {
         const SizedBox(width: 10),
         pick('Priority', t['priority'] as String, ticketPriority, (v) => _run(() => _api.editTicket(_org, widget.id, {'priority': v}))),
       ]),
+      _supportsField(canEdit),
       const SizedBox(height: 10),
       Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Icon(Icons.person_outline, size: 18, color: workSoftText),
@@ -612,6 +621,44 @@ class _TicketScreenState extends State<TicketScreen> {
         ],
       ]),
     ]);
+  }
+
+  /// Which client deliverable this ticket supports: its progress and delays show on that promise.
+  Widget _supportsField(bool canEdit) {
+    final d = _d!;
+    final supports = d['supports'] as Map?;
+    final options = <int, String>{
+      for (final x in List<Map>.from(d['deliverables'] ?? [])) x['id'] as int: x['text'] as String? ?? '',
+      if (supports != null) supports['id'] as int: supports['text'] as String? ?? '',
+    };
+    if (options.isEmpty && supports == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Frosted(
+        radius: 16,
+        padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+        child: Row(children: [
+          Icon(Icons.flag_outlined, size: 18, color: workSoftText),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int?>(
+                isExpanded: true,
+                value: supports?['id'] as int?,
+                dropdownColor: AppColors.dmBubbleIn,
+                hint: const Text('Supports no client deliverable'),
+                onChanged: canEdit && !_busy ? (v) => _run(() => _api.editTicket(_org, widget.id, {'supports_id': v})) : null,
+                items: [
+                  const DropdownMenuItem<int?>(value: null, child: Text('No client deliverable')),
+                  for (final e in options.entries)
+                    DropdownMenuItem<int?>(value: e.key, child: Text('Supports: ${e.value}', overflow: TextOverflow.ellipsis)),
+                ],
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _brief(Map t) {

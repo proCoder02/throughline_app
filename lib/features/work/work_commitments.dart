@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 
 import '../../theme.dart';
 import 'work_api.dart';
+import 'work_client.dart';
 import 'work_context.dart';
+import 'work_tickets.dart';
 import 'work_ui.dart';
 
 /// Commitments: what I owe, what's owed to me, and everything in my teams.
@@ -275,6 +277,7 @@ class _CommitmentScreenState extends State<CommitmentScreen> {
                     _header(c),
                     _actions(c),
                     if (_activity?['supports'] != null) _supports(_activity!['supports'] as Map),
+                    if (_activity?['tickets'] is Map) _tickets(_activity!['tickets'] as Map),
                     if ((_activity?['supporting'] as List?)?.isNotEmpty == true) _supporting(_activity!['supporting'] as List),
                     const SectionTitle('Activity'),
                     ..._thread(),
@@ -393,6 +396,22 @@ class _CommitmentScreenState extends State<CommitmentScreen> {
                 ]),
         ),
       );
+
+  /// The tickets behind this promise (e.g. a client deliverable): progress, and each ticket.
+  Widget _tickets(Map r) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SectionTitle('Tickets', count: (r['total'] as num?)?.toInt()),
+        TicketProgressBar(p: r),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final k in List<Map>.from(r['tickets'] ?? []))
+            ActionChip(
+              avatar: Icon(k['status'] == 'done' ? Icons.check_circle : Icons.confirmation_number_outlined,
+                  size: 18, color: k['status'] == 'blocked' || k['late'] == true ? AppColors.danger : null),
+              label: Text('${k['key']} · ${ticketStatus[k['status']] ?? k['status']}${k['late'] == true ? ' · late' : ''}'),
+              onPressed: () => openTicket(context, widget.work, id: k['id'] as int),
+            ),
+        ]),
+      ]);
 
   Widget _supporting(List kids) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SectionTitle('Depends on', count: kids.length),

@@ -182,6 +182,11 @@ class WorkApi {
   Future<Map> decisions(int org) async => await _get('${_o(org)}/decisions', cacheKey: 'decisions:$org') as Map;
   Future<Map> decision(int org, int id) async => await _get('${_o(org)}/decisions/$id') as Map;
 
+  // ---- client view (Sales / BU): client projects this week, client update drafts ----
+  Future<Map> clientDigest(int org) async => await _get('${_o(org)}/client-digest', cacheKey: 'client-digest:$org') as Map;
+  Future<Map> clientUpdate(int org, int projectId, {int? contactId}) async =>
+      await _post('${_o(org)}/projects/$projectId/client-update', {'contact_id': contactId}) as Map;
+
   // ---- tickets (PAY-12) and what's been said about them ----
   Future<Map> tickets(int org, {String scope = 'mine', String status = 'open', String? q, int? projectId}) async => await _get(
         '${_o(org)}/tickets',
@@ -204,8 +209,12 @@ class WorkApi {
       await _get('${_o(org)}/ticket-links', query: {'source_type': sourceType, 'source_id': sourceId}) as Map;
 
   // ---- ask ----
-  Future<Map> ask(int org, String question, {int? unitId}) async =>
-      await _post('${_o(org)}/ask', {'question': question, 'unit_id': unitId}) as Map;
+  /// Saved in my own Ask thread (none: starts a new one; the reply has its thread_id).
+  Future<Map> ask(int org, String question, {int? unitId, int? threadId}) async =>
+      await _post('${_o(org)}/ask', {'question': question, 'unit_id': unitId, 'thread_id': threadId}) as Map;
+  Future<Map> askThreads(int org) async => await _get('${_o(org)}/ask-threads', cacheKey: 'ask-threads:$org') as Map;
+  Future<Map> askThread(int org, int id) async => await _get('${_o(org)}/ask-threads/$id') as Map;
+  Future<void> deleteAskThread(int org, int id) => _dio.delete('${_o(org)}/ask-threads/$id');
 }
 
 /// The server's own error text ("Only the people involved…") when there is

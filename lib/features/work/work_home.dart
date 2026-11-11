@@ -8,6 +8,7 @@ import 'work_commitments.dart';
 import 'work_context.dart';
 import 'work_meetings.dart';
 import 'work_tickets.dart';
+import 'work_client.dart';
 import 'mode_switch.dart';
 import 'work_glass.dart';
 import '../../main.dart' show authProvider;
@@ -46,7 +47,11 @@ class _HomeTabState extends State<HomeTab> {
     try {
       mine = await _api.tickets(_org, scope: 'mine');
     } catch (_) {}
-    return {...brief, 'requests': requests['requests'] ?? [], 'my_tickets': mine['tickets'] ?? []};
+    Map digest = const {'projects': []};
+    try {
+      digest = await _api.clientDigest(_org); // client projects I'm on (Sales / BU / project team)
+    } catch (_) {}
+    return {...brief, 'requests': requests['requests'] ?? [], 'my_tickets': mine['tickets'] ?? [], 'client_digest': digest};
   }
 
   Future<void> _quick(Future<void> Function() f, String done) async {
@@ -129,6 +134,7 @@ class _HomeTabState extends State<HomeTab> {
                       label: 'Decisions',
                       onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DecisionsScreen(work: work))))),
             ]),
+            if (d['client_digest'] is Map) ClientDigestCard(work: work, digest: d['client_digest'] as Map),
             if ((d['my_tickets'] as List?)?.isNotEmpty == true) ...[
               SectionTitle('Your tickets', count: (d['my_tickets'] as List).length),
               for (final t in List<Map>.from(d['my_tickets']).take(4))
