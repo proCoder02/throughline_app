@@ -16,7 +16,9 @@ jobs:
           channel: stable
           flutter-version: 3.44.8
 
-      - run: flutter config --no-enable-swift-package-manager
+      # receive_sharing_intent 1.9+ ships for iOS through Swift Package Manager only;
+      # the other plugins still come from CocoaPods (Flutter mixes the two).
+      - run: flutter config --enable-swift-package-manager
 
       - run: flutter pub get
 
