@@ -28,6 +28,12 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Throughline records conversations to transcribe and analyze them.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Throughline uses Bluetooth to find people nearby for Meet and to route call audio to your headset.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Throughline uses the camera for video calls and to take photos you share in chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Throughline lets you choose photos, such as receipts, to share in chat or use on your profile.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
