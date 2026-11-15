@@ -24,7 +24,17 @@ jobs:
 
       - run: flutter build ios --release --no-codesign
 
+      # Package the .ipa here on macOS: upload-artifact drops Unix permissions,
+      # so a Runner.app zipped on Windows loses the executable bit and iOS won't
+      # launch it. zip keeps permissions (-y keeps symlinks); upload-artifact
+      # then wraps this one file without touching what's inside it.
+      - name: Package unsigned .ipa
+        run: |
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          cd build/ipa && zip -qry Throughline-unsigned.ipa Payload
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Runner-app
-          path: build/ios/iphoneos/Runner.app
+          name: Throughline-ipa
+          path: build/ipa/Throughline-unsigned.ipa
