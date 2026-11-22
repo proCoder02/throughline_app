@@ -1,5 +1,6 @@
 import '../../features/work/mode_switch.dart';
 import '../../features/meet/meet.dart';
+import '../../features/pay/pay_scan_screen.dart';
 import 'dart:async';
 import 'dart:ui';
 
@@ -292,6 +293,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               onTasks: () => widget.onNavigateToTab(2),
                               onPeople: () => widget.onNavigateToTab(4),
                               onAttach: () => _openChat(autoPickImage: true),
+                              onPay: () => Navigator.of(context)
+                                  .push(MaterialPageRoute(builder: (_) => const PayScanScreen())),
                             )
                                 .animate()
                                 .fadeIn(
@@ -888,6 +891,7 @@ class _QuickActionsRow extends StatelessWidget {
   final VoidCallback onTasks;
   final VoidCallback onPeople;
   final VoidCallback onAttach;
+  final VoidCallback onPay;
 
   const _QuickActionsRow({
     required this.onChat,
@@ -896,12 +900,14 @@ class _QuickActionsRow extends StatelessWidget {
     required this.onTasks,
     required this.onPeople,
     required this.onAttach,
+    required this.onPay,
   });
 
   @override
   Widget build(BuildContext context) {
     final items = [
       (Icons.chat_bubble_outline, 'Chat', 'Talk to your AI', onChat),
+      (Icons.qr_code_scanner, 'Pay', 'Scan any UPI QR', onPay),
       (Icons.contactless_outlined, 'Meet', 'Swap cards in person', onMeet),
       (Icons.mic_none, 'Listen', 'Voice notes & calls', onListen),
       (Icons.check_box_outlined, 'Tasks', 'Manage your tasks', onTasks),

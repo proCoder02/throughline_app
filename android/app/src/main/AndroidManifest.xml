@@ -162,5 +162,24 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="ms-outlook"/>
         </intent>
+        <!-- Scan & Pay (lib/features/pay): lets url_launcher hand a UPI
+             payment link to the system chooser (upi) or straight to
+             Google Pay (tez), PhonePe and Paytm (paytmmp). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="upi"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tez"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="phonepe"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="paytmmp"/>
+        </intent>
     </queries>
 </manifest>

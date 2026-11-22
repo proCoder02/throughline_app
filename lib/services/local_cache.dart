@@ -114,6 +114,12 @@ class LocalCache {
 
   Future<void> setThemeMode(String mode) => _box.put('theme_mode', mode);
 
+  /// Scan & Pay: the UPI app last paid with (UpiApp.name), preselected next
+  /// time so a repeat payment is a single tap.
+  String? getLastUpiApp() => _box.get('last_upi_app');
+
+  Future<void> setLastUpiApp(String name) => _box.put('last_upi_app', name);
+
   /// Keyed by status ("open"/"done"/"all") -- TasksScreen's filter switches
   /// between them, and each is its own independent last-known snapshot.
   List<Task>? getTasks(String status) {

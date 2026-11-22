@@ -31,7 +31,14 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Throughline uses Bluetooth to find people nearby for Meet and to route call audio to your headset.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Throughline uses the camera for video calls and to take photos you share in chat.</string>
+	<string>Throughline uses the camera for video calls, to take photos you share in chat, and to scan QR codes, including UPI payment codes.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tez</string>
+		<string>phonepe</string>
+		<string>paytmmp</string>
+		<string>upi</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Throughline lets you choose photos, such as receipts, to share in chat or use on your profile.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
