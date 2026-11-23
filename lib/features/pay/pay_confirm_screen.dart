@@ -3,10 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../models/transaction.dart';
-import '../../services/conversation_service.dart';
 import '../../services/local_cache.dart';
 import '../../theme.dart';
+import 'pay_api.dart';
 import 'upi_apps.dart';
 import 'upi_link.dart';
 
@@ -27,7 +26,11 @@ import 'upi_link.dart';
 class PayConfirmScreen extends StatefulWidget {
   final UpiLink link;
 
-  const PayConfirmScreen({super.key, required this.link});
+  /// The promise this pays ("Send Ravi 500 for the tickets"), when opened
+  /// from "You owe": its amount is prefilled and it's closed once paid.
+  final OwedItem? owed;
+
+  const PayConfirmScreen({super.key, required this.link, this.owed});
 
   @override
   State<PayConfirmScreen> createState() => _PayConfirmScreenState();
@@ -42,7 +45,6 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
 
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
-  final _service = ConversationService();
   late UpiApp _app;
 
   /// Set once a UPI app was launched; cleared after the "did it go through"
@@ -51,6 +53,10 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
   bool _leftApp = false;
   bool _asking = false;
 
+  /// What Throughline remembers about this UPI ID (null until loaded, or if
+  /// the server can't say -- paying works the same either way).
+  PayeeMemory? _memory;
+
   UpiLink get _link => widget.link;
 
   @override
@@ -58,7 +64,12 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final fixed = _link.fixedAmount;
-    if (fixed != null) _amountController.text = fixed.toStringAsFixed(2);
+    if (fixed != null) {
+      _amountController.text = fixed.toStringAsFixed(2);
+    } else if (widget.owed?.amount != null) {
+      _amountController.text = _plain(widget.owed!.amount!);
+    }
+    _loadMemory();
     final apps = UpiApp.forPlatform;
     String? last;
     try {
@@ -67,6 +78,44 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
       last = null;
     }
     _app = apps.firstWhere((a) => a.name == last, orElse: () => apps.first);
+  }
+
+  static String _plain(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
+  Future<void> _loadMemory() async {
+    final m = await PayApi.instance.payee(_link.payeeVpa!, shownName: _link.payeeName);
+    if (!mounted || m == null) return;
+    setState(() => _memory = m);
+  }
+
+  Future<void> _nameThisPayee() async {
+    final controller = TextEditingController(text: _memory?.label ?? '');
+    final label = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Who is this?'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 60,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(hintText: 'e.g. Ramesh (milk)'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Save')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (label == null || !mounted) return;
+    try {
+      await PayApi.instance.setLabel(_link.payeeVpa!, label);
+      await _loadMemory();
+    } catch (_) {
+      _toast("Couldn't save the name. Check your connection.");
+    }
   }
 
   @override
@@ -147,17 +196,18 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
     if (!mounted || paid != true) return;
 
     try {
-      await _service.saveTransaction(
-        null,
-        Transaction(
-          amount: pending.amount,
-          payee: _link.displayName,
-          paymentMethod: pending.app.name,
-          item: pending.note,
-        ),
+      // /pay/record remembers the payee and closes the promise; it falls back
+      // to the original POST /transactions on a server without it.
+      final closed = await PayApi.instance.record(
+        vpa: _link.payeeVpa!,
+        payeeName: _link.displayName,
+        amount: pending.amount,
+        app: pending.app.name,
+        note: pending.note,
+        taskId: widget.owed?.taskId,
       );
       if (!mounted) return;
-      _toast('Saved to your spending');
+      _toast(closed != null ? 'Paid. Promise closed: $closed' : 'Saved to your spending');
       Navigator.of(context).pop();
     } catch (_) {
       _toast("Payment noted, but it couldn't be saved. Check your connection.");
@@ -192,6 +242,14 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
                 children: [
                   _payeeCard(),
+                  if (widget.owed != null) ...[
+                    const SizedBox(height: 12),
+                    _owedCard(widget.owed!),
+                  ],
+                  if (_memory != null) ...[
+                    const SizedBox(height: 12),
+                    _memoryCard(_memory!),
+                  ],
                   const SizedBox(height: 28),
                   _amountField(fixed),
                   const SizedBox(height: 4),
@@ -286,6 +344,96 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
     );
   }
 
+  /// The promise being paid, and where it was made.
+  Widget _owedCard(OwedItem o) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.dmAccent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmAccent.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.handshake_outlined, size: 20, color: AppColors.dmAccentDark),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Paying what you promised', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.dmText)),
+                const SizedBox(height: 2),
+                Text(o.text, style: TextStyle(color: AppColors.dmText)),
+                if (o.sourceTitle != null)
+                  Text('From: ${o.sourceTitle}', style: TextStyle(fontSize: 12.5, color: AppColors.dmTextSoft)),
+                const SizedBox(height: 2),
+                Text("It's closed once you confirm the payment.",
+                    style: TextStyle(fontSize: 12.5, color: AppColors.dmTextSoft)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// What Throughline remembers about this UPI ID, plus anything to check.
+  Widget _memoryCard(PayeeMemory m) {
+    final lines = <String>[];
+    if (m.timesPaid > 0) {
+      final last = m.lastAt == null ? '' : ' on ${DateFormat('d MMM').format(m.lastAt!)}';
+      lines.add('Paid ${m.timesPaid == 1 ? 'once' : '${m.timesPaid} times'} \u00b7 last ${_inr.format(m.lastAmount ?? 0)}$last');
+      if (m.recentNotes.isNotEmpty) lines.add('For: ${m.recentNotes.join(', ')}');
+    }
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.dmBubbleIn,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.dmBubbleBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history, size: 18, color: AppColors.dmTextSoft),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  m.label ?? (m.newPayee ? 'First time paying them' : 'You know this payee'),
+                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.dmText),
+                ),
+              ),
+              TextButton(
+                onPressed: _nameThisPayee,
+                child: Text(m.label == null ? 'Name them' : 'Rename'),
+              ),
+            ],
+          ),
+          for (final l in lines)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(l, style: TextStyle(fontSize: 13, color: AppColors.dmTextSoft)),
+            ),
+          for (final w in m.warnings)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.danger),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(w, style: TextStyle(fontSize: 13, height: 1.35, color: AppColors.dmText))),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _badge(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -363,6 +511,21 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
       spacing: 8,
       runSpacing: 8,
       children: [
+        if (_memory?.usualAmount != null)
+          ActionChip(
+            avatar: const Icon(Icons.replay, size: 16, color: AppColors.dmAccentDark),
+            label: Text('${_inr.format(_memory!.usualAmount!).replaceAll('.00', '')} usual'),
+            labelStyle: TextStyle(fontWeight: FontWeight.w700, color: AppColors.dmText),
+            backgroundColor: AppColors.dmAccent.withValues(alpha: 0.14),
+            side: BorderSide(color: AppColors.dmAccent.withValues(alpha: 0.5)),
+            shape: const StadiumBorder(),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              _amountController.text = _plain(_memory!.usualAmount!);
+              _amountController.selection = TextSelection.collapsed(offset: _amountController.text.length);
+              setState(() {});
+            },
+          ),
         for (final v in _quickAmounts)
           ActionChip(
             label: Text('₹$v'),
@@ -394,7 +557,7 @@ class _PayConfirmScreenState extends State<PayConfirmScreen> with WidgetsBinding
         cursorColor: AppColors.dmAccent,
         decoration: InputDecoration(
           icon: Icon(Icons.edit_note, color: AppColors.dmTextSoft),
-          hintText: 'Add a note (optional)',
+          hintText: _memory?.lastNote != null ? "What's this for? (last: ${_memory!.lastNote})" : "What's this for? (optional)",
           hintStyle: TextStyle(color: AppColors.dmTextSoft),
           border: InputBorder.none,
           counterText: '',

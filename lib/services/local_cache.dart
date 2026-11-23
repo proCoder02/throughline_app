@@ -120,6 +120,12 @@ class LocalCache {
 
   Future<void> setLastUpiApp(String name) => _box.put('last_upi_app', name);
 
+  /// Last-known Pay sheet contents ("You owe" + recent payees), shown
+  /// instantly when Scan & Pay opens and refreshed over the network after.
+  String? getPaySnapshot() => _box.get('pay_snapshot');
+
+  Future<void> setPaySnapshot(String json) => _box.put('pay_snapshot', json);
+
   /// Keyed by status ("open"/"done"/"all") -- TasksScreen's filter switches
   /// between them, and each is its own independent last-known snapshot.
   List<Task>? getTasks(String status) {
